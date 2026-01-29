@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+*.wav
+!legit.wav
+!fraud_ai.wav
+!ai_audio.wav
+!my_audio.wav

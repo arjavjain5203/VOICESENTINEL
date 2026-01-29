@@ -1,0 +1,9 @@
+joblib
+scikit-learn
+numpy
+SpeechRecognition
+gTTS
+pydub
+openai-whisper
+requests
+pyaudio
