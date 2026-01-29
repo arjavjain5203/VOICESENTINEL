@@ -112,14 +112,52 @@ def process_file_mode(input_file):
     # 4. Generate Report
     otp_success, identity_fails, _ = validate_identity(CALL_STATE["otp"], CALL_STATE["name"], CALL_STATE["dob"])
     
+    # --- HISTORY CHECK ---
+    from src.database import get_db, get_account_history, save_call_record, init_db
+    from src.history import analyze_history
+    
+    # Ensure DB ready (idempotent)
+    init_db()
+    
+    # Mock Account ID for file mode (or extract?)
+    # For demo, let's say: "Enter Account ID manually?" or fixed to '12345' if 'fraud' in file?
+    # Let's check sys args or just random default? User said "Prompt for Account ID".
+    # In file mode, interactive prompt might be weird. Let's assume passed via separate arg or just use '12345'
+    # Actually, let's ask user even in file mode if interactive stdin available, else default.
+    account_id = "12345" # Default for demo easier testing
+    print(f"[System] analyzing history for Account: {account_id}...")
+    
+    db = next(get_db())
+    history = get_account_history(db, account_id)
+    mod, explanations = analyze_history(history)
+    print(f"[History] Modifier: {mod}, Reasons: {explanations}")
+    
+    # 5. Risk Calculation
+    otp_success, identity_fails, _ = validate_identity(details["otp"], details["name"], details["dob"])
+    
     risk_data = calculate_risk(
         otp_success=otp_success,
         identity_fails=identity_fails,
-        voice_risk=CALL_STATE["voice_risk"],
-        intent=CALL_STATE["intent"],
-        voice_prob=CALL_STATE["voice_prob"]
+        voice_risk=CALL_STATE.get("voice_risk", "LOW"),
+        intent=details["intent"],
+        voice_prob=CALL_STATE.get("voice_prob", 0.0),
+        history_modifier=mod
     )
+    risk_data["history_explanations"] = explanations # Pass for reporting
     
+    # 6. Save Record
+    save_call_record(db, {
+        "account_id": account_id,
+        "otp_success": otp_success,
+        "identity_fails": identity_fails,
+        "voice_risk_level": CALL_STATE.get("voice_risk", "LOW"),
+        "intent": details["intent"],
+        "final_risk_level": risk_data["final_risk"],
+        "risk_percentage": risk_data["risk_percentage"],
+        "agent_decision": "PENDING"
+    })
+    
+    # 7. Generate Report
     report = generate_report(risk_data)
     print(report)
     
@@ -156,6 +194,31 @@ def live_interactive_mode():
     print("[System] Mode: Live Interactive Session")
     speak("Voice Sentinel Secure Line. Please answer the security questions.")
     
+    # --- HISTORY INTEGRATION ---
+    from src.database import get_db, get_account_history, save_call_record, init_db
+    from src.history import analyze_history
+    
+    init_db()
+    
+    # Ask for Account ID
+    speak("Please say your 5 digit Account Number.")
+    # listen_and_transcribe with simple digits extraction
+    acc_text = listen_and_transcribe("Please say your account number.")
+    # Extract digits
+    import re
+    digits = re.findall(r"\d+", acc_text)
+    account_id = "".join(digits)
+    if not account_id: 
+        account_id = "UNKNOWN"
+        print(f"[System] Could not hear account number. Using {account_id}")
+    else:
+        print(f"[System] Account ID: {account_id}")
+    
+    db = next(get_db())
+    history = get_account_history(db, account_id)
+    mod, explanations = analyze_history(history)
+    print(f"[History] Modifier: {mod}, Reasons: {explanations}")
+    
     # Start Monitor Thread
     monitor_thread = threading.Thread(target=periodic_risk_monitor)
     monitor_thread.start()
@@ -191,7 +254,7 @@ def live_interactive_mode():
     CALL_STATE["finished"] = True
     monitor_thread.join()
     
-    # Final Analysis if not triggered yet (short call)
+    # Final Analysis if not triggered yet
     if CALL_STATE["voice_risk"] == "LOW" and CALL_STATE["voice_prob"] == 0.0:
         if get_wav_duration(session_file) > 0.5:
              analyze_audio_file(session_file)
@@ -204,8 +267,22 @@ def live_interactive_mode():
         identity_fails=identity_fails,
         voice_risk=CALL_STATE["voice_risk"],
         intent=CALL_STATE["intent"],
-        voice_prob=CALL_STATE["voice_prob"]
+        voice_prob=CALL_STATE["voice_prob"],
+        history_modifier=mod
     )
+    risk_data["history_explanations"] = explanations
+    
+    # SAVE History
+    save_call_record(db, {
+        "account_id": account_id,
+        "otp_success": otp_success,
+        "identity_fails": identity_fails,
+        "voice_risk_level": CALL_STATE["voice_risk"],
+        "intent": CALL_STATE["intent"],
+        "final_risk_level": risk_data["final_risk"],
+        "risk_percentage": risk_data["risk_percentage"],
+        "agent_decision": "PENDING"
+    })
     
     report = generate_report(risk_data)
     print(report)

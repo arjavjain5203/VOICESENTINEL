@@ -40,17 +40,37 @@ load_models()
 def voice():
     """Incoming Call Handler"""
     resp = VoiceResponse()
-    resp.say("Welcome to Voice Sentinel. Please state your name, date of birth, and the reason for your call, then press hash.", voice='alice')
-    # Record the user's response
-    # maxLength=10 seconds (enough for short answers)
-    resp.record(action='/process_input', method='POST', maxLength=10, finishOnKey='#')
-    resp.say("I did not receive a recording. Goodbye.")
+    
+    # 1. Ask for Account Number first
+    gather = resp.gather(numDigits=5, action='/handle_account', method='POST')
+    gather.say("Welcome to Voice Sentinel. Please enter your 5 digit account number.", voice='alice')
+    resp.say("We did not receive your input. Goodbye.")
+    
+    return (str(resp), 200, {'Content-Type': 'text/xml'})
+
+@app.route("/handle_account", methods=['POST'])
+def handle_account():
+    """Handle Account Number Input"""
+    account_id = request.values.get('Digits', None)
+    
+    resp = VoiceResponse()
+    resp.say("Thank you. Please state your name, date of birth, and the reason for your call, then press hash.", voice='alice')
+    # Use URL query param to pass account_id to the recording action? 
+    # Or cleaner: session/cookies. Flask sessions work with Twilio if cookies enabled.
+    # Alternatively, append key to action URL.
+    resp.record(action=f'/process_input?account_id={account_id}', method='POST', maxLength=10, finishOnKey='#')
     return (str(resp), 200, {'Content-Type': 'text/xml'})
 
 @app.route("/process_input", methods=['GET', 'POST'])
 def process_input():
-    """Process the recorded audio from Twilio"""
+    """Process the recorded audio"""
     recording_url = request.values.get('RecordingUrl', None)
+    account_id = request.args.get('account_id', 'UNKNOWN')
+    
+    # Imports
+    from src.database import get_db, get_account_history, save_call_record, init_db
+    from src.history import analyze_history
+    init_db()
     
     if not recording_url:
         resp = VoiceResponse()
@@ -76,24 +96,18 @@ def process_input():
         # 3. Extract Details
         details = extract_details_from_transcript(transcript)
         
-        # 4. Analyze Voice Risk
+        # 4. History Analysis
+        db = next(get_db())
+        history = get_account_history(db, account_id)
+        mod, explanations = analyze_history(history)
+        print(f"[History] Account: {account_id}, Modifier: {mod}, Reasons: {explanations}")
+        
+        # 5. Analyze Voice Risk
         prob_ai = 0.0
         voice_risk = "LOW"
         
         if MODEL and SCALER:
             try:
-                # Mock propagation for filename (if needed? Twilio filenames are UUIDs)
-                # We can't use filename-based mock logic here unless we force it.
-                # So we rely on real feature extraction logic (which uses 'legit.wav' mock if file read fails, etc, 
-                # or calculates real features if pydub/librosa works).
-                # NOTE: src/features.py uses filename checks!
-                # "if 'fraud' in path or 'ai' in path..."
-                # Twilio paths won't have that.
-                # We need a fallback or real model usage.
-                # Since this is a demo, we might want to check if the transcript says "I am a robot" to force it?
-                # Or just assume "Low Risk" for random calls unless we specificially demo with a 'fraud' file inject.
-                
-                # Let's use the extractor.
                 audio = load_audio(filename)
                 features = extract_features(audio).reshape(1, -1)
                 features_scaled = SCALER.transform(features)
@@ -103,8 +117,7 @@ def process_input():
             except Exception as e:
                 print(f"[Feature Error] {e}")
         
-        # 5. Risk Calculation
-        # Validate Identity (Mock Truth: 15 July 2005)
+        # 6. Risk Calculation
         otp_success, identity_fails, _ = validate_identity(details["otp"], details["name"], details["dob"])
         
         risk_data = calculate_risk(
@@ -112,11 +125,25 @@ def process_input():
             identity_fails=identity_fails,
             voice_risk=voice_risk,
             intent=details["intent"],
-            voice_prob=prob_ai
+            voice_prob=prob_ai,
+            history_modifier=mod
         )
         
         risk_pct = risk_data["risk_percentage"]
         final_risk = risk_data["final_risk"]
+        
+        # 7. Save Record
+        save_call_record(db, {
+            "account_id": account_id,
+            "otp_success": otp_success,
+            "identity_fails": identity_fails,
+            "voice_risk_level": voice_risk,
+            "intent": details["intent"],
+            "final_risk_level": final_risk,
+            "risk_percentage": risk_pct,
+            "agent_decision": "PENDING"
+        })
+
         
         # 6. Response
         resp = VoiceResponse()

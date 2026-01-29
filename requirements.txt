@@ -10,3 +10,4 @@ pyaudio
 flask
 twilio
 gunicorn
+sqlalchemy

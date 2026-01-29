@@ -1,0 +1,31 @@
+# VoiceSentinel Test Data Reference
+
+Use these details to test various scenarios in the simulation.
+
+## 1. Account Numbers (History Simulation)
+When prompted for "Account Number":
+
+*   **12345** - **High Risk History**
+    *   *Scenario*: This account has multiple recent "SIM_SWAP" attempts recorded.
+    *   *Effect*: Detection of this account will increase the Risk Level (History Modifier +1).
+    *   *Expected Result*: Even with correct OTP, risk might be elevated or "High Velocity" flagged.
+
+*   **99999** - **Clean History**
+    *   *Scenario*: This account has a history of successful, low-risk interactions.
+    *   *Effect*: Safe history may lower the risk level (History Modifier -1).
+    *   *Expected Result*: Risk Level should remain stable or decrease if current interaction is safe.
+
+## 2. Identity Verification (Ground Truth)
+When answering security questions, these are the "Correct" values expected by the system:
+
+*   **OTP**: `5646`
+*   **Full Name**: `Mukesh` (System also accepts fuzzy matches like "Mokesh", "Mahesh")
+*   **Date of Birth**: `15 July 2005` (Accepts "15th July", "July 15")
+
+*Note: Providing incorrect values for these will flagged as Identity Check Failures (Risk Signals).*
+
+## 3. Test Files
+*   `fraud_ai.wav` - Simulated AI Voice / SIM Swap Intent.
+*   `legit.wav` - Simulated Human Voice / Refund Intent.
+*   `ai_audio.wav` - (Generated during your tests) ai voice
+*   `my_audio.wav` - (Generated during your tests) my voice 

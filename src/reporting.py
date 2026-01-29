@@ -50,6 +50,12 @@ def generate_report(risk_data):
     
     # Risk Percentage
     risk_percentage = risk_data.get("risk_percentage", 0.0)
+    history_impact = risk_data.get("history_impact", "None")
+    history_reasons = risk_data.get("history_explanations", [])
+    
+    history_str = "None"
+    if history_reasons:
+        history_str = "; ".join(history_reasons)
     
     report = f"""
 __________________________________________________
@@ -60,6 +66,7 @@ otp verified        : {otp_str}
 personal data check : {personal_data_str}
 voice Analysis      : {voice_percent} matching to AI
 user intent         : {signals['intent']}
+history impact      : {history_impact} ({history_str})
 total risk chances  : {risk_percentage:.1f}% ({final_risk})
 __________________________________________________
 """
