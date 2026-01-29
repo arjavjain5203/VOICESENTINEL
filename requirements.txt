@@ -11,3 +11,6 @@ flask
 twilio
 gunicorn
 sqlalchemy
+pymysql
+python-dotenv
+cryptography
