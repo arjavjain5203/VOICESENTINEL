@@ -1,0 +1,42 @@
+# VoiceSentinel - Quick Start Guide
+
+This project contains two main systems:
+1.  **Call Center Agent (Live/File)**: For businesses to analyze incoming calls (CLI or Twilio).
+2.  **Regular User Monitor**: For individuals to detect AI voices during their calls.
+
+## 1. Call Center Agent (Live Mode)
+Simulates a call center agent talking to a user. It asks questions (OTP, Name, DOB), records answers via microphone, and analyzes risk.
+
+*   **Command**:
+    ```bash
+    venv/bin/python main_simulation.py
+    ```
+    *(Follow the on-screen prompts. Speak into your microphone.)*
+
+## 2. Call Center Agent (File Mode)
+Analyze a pre-recorded audio file directly (skipping the Q&A). Useful for bulk processing or testing.
+
+*   **Command**:
+    ```bash
+    venv/bin/python main_simulation.py --audio-input fraud_ai.wav
+    ```
+    *(Replace `fraud_ai.wav` with any file path).*
+
+## 3. Regular User Monitor (Day-to-Day Use)
+A desktop tool that listens to your system audio (speakers) during a call (Zoom, Skype, Phone) and notifies you if the voice is AI.
+
+*   **Command**:
+    ```bash
+    venv/bin/python regular_user/monitor.py
+    ```
+    *   **Option 1**: Start Monitoring (Records 10 seconds of what you hear).
+    *   **Option 2**: Analyze a specific file.
+
+## 4. Twilio Setup (Cloud Deployment)
+To deploy the real-time phone agent:
+1.  Deploy to Render (using `Procfile`).
+2.  Set Twilio Webhook to `https://your-app.onrender.com/voice`.
+
+## Test Data
+*   **Account 12345**: High Risk History (Simulated fraud patterns).
+*   **Account 99999**: Low Risk History (Simulated clean user).
