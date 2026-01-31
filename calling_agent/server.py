@@ -109,10 +109,12 @@ def analysis_thread(session_id):
             print(f"[Analysis] Transcript: {transcript}")
 
             # PLAYBACK ON SERVER (So Agent hears the User)
-            try:
-                subprocess.run(["aplay", "-q", accumulated_path], check=False)
-            except Exception as e:
-                print(f"[Playback Error] Could not play audio: {e}")
+            # Use latest chunk to avoid replaying history
+            if session['chunks']:
+                try:
+                    subprocess.run(["aplay", "-q", session['chunks'][-1]], check=False)
+                except Exception as e:
+                    print(f"[Playback Error] Could not play audio: {e}")
         
             # 2. Extract Details
             # We update the session's details incrementally

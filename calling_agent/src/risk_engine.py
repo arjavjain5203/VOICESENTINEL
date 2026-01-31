@@ -1,4 +1,4 @@
-def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0.0, history_modifier=0, country_mismatch=False):
+def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0.0, voice_match_score=1.0, history_modifier=0, country_mismatch=False):
     """
     Aggregates risk signals into a final percentage score based on user-defined weights.
     
@@ -37,6 +37,13 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     voice_contribution = voice_prob * 2.0
     current_score += voice_contribution
     details["voice_score"] = voice_contribution
+
+    # 3b. Voice Match (Weight 2) - EQUAL TO AI
+    # Match 1.0 -> Risk 0
+    # Match 0.0 -> Risk 2
+    voice_match_risk = (1.0 - voice_match_score) * 2.0
+    current_score += voice_match_risk
+    details["match_score"] = voice_match_risk
     
     # 4. Intent Scoring (Weight 1-4)
     intent_scores = {
@@ -50,6 +57,13 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     current_score += intent_val
     details["intent_score"] = intent_val
 
+    # 3b. Voice Match Score (Weight 2)
+    # Inverse logic: High match (1.0) -> Low Risk (0.0 added)
+    # Low match (0.0) -> High Risk (2.0 added)
+    # We assume 'voice_match_score' is passed in arguments or kwargs? 
+    # Current signature doesn't have it explicitly, let's look at kwargs or add it.
+    # Wait, the tool call below changes the signature too.
+    
     # 5. Country Mismatch (Weight 2)
     if country_mismatch:
         current_score += 2.0
@@ -58,7 +72,7 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
         details["country_score"] = 0.0
     
     # Calculate Percentage
-    max_score = 11.0 # Updated from 9
+    max_score = 13.0 # Updated from 11 (Added 2 for Voice Match)
     risk_percentage = (current_score / max_score) * 100.0
     
     # Determine Initial Risk Label
