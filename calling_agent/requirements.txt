@@ -1,12 +1,11 @@
 joblib
 scikit-learn
 numpy
-SpeechRecognition
-gTTS
+
 pydub
+gTTS
 openai-whisper
 requests
-pyaudio
 flask
 twilio
 gunicorn
@@ -14,8 +13,6 @@ sqlalchemy
 pymysql
 python-dotenv
 cryptography
-soundcard
-plyer
 soundfile
 pymongo
 resemblyzer
