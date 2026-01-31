@@ -65,47 +65,92 @@ def save_verification_record(data):
         except Exception as e:
             print(f"[GridFS Error] {e}")
 
-    # 2. Determine "First Time" Status (if not explicitly passed)
-    is_first = data.get('is_first_time_caller')
-    if is_first is None:
-        is_first = is_first_time_caller(data['phone_number'])
+    # 2. Determine Sequence Number (GLOBAL)
+    last_record = db[COLLECTION_NAME].find_one(sort=[("audio_sequence_number", -1)])
+    if last_record and "audio_sequence_number" in last_record:
+        next_seq = last_record["audio_sequence_number"] + 1
+    else:
+        next_seq = 1
+        
+    formatted_audio_id = f"audio_{next_seq:04d}.wav"
+    
+    # GridFS Storage (Still useful, or store on disk and link?)
+    # Requirement says "audio_file_id should reference storage using sequence".
+    # We will use GridFS but name it correctly.
+    if audio_bytes:
+        try:
+            # We override gridfs filename to match the standard
+            audio_id = fs.put(audio_bytes, filename=formatted_audio_id, content_type="audio/wav")
+            audio_hash = hashlib.sha256(audio_bytes).hexdigest()
+        except Exception as e:
+            print(f"[GridFS Error] {e}")
 
-    # 3. Construct Document
+    # 3. Determine "First Time" Status and Total Calls
+    phone = data['phone_number']
+    prev_calls = db[COLLECTION_NAME].count_documents({"phone_number": phone})
+    is_first = (prev_calls == 0)
+    total_calls = prev_calls + 1
+
+
+    # 3b. Velocity Check (Trust Decay)
+    # Check calls in last 24 hours
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
+    daily_count = db[COLLECTION_NAME].count_documents({
+        "phone_number": phone, 
+        "call_timestamp": {"$gte": cutoff}
+    })
+    
+    # Trust Logic
+    phone_trust = data.get('phone_trust_score', 50)
+    user_trust = data.get('user_id_trust_score', 50)
+    
+    # Penalty: If > 4 calls in 24h (Velocity Rule)
+    # Applied primarily for "BATTERY_SWAP" but good as general rule for now
+    if daily_count >= 4:
+        print(f"[Trust Risk] High Velocity Detected ({daily_count} calls/24h). Applying Penalty.")
+        phone_trust = max(0, phone_trust - 20)
+        user_trust = max(0, user_trust - 20)
+        
+    # 4. Construct Document (STRICT SCHEMA)
     doc = {
-        "call_id": data['call_id'],
-        "phone_number": data['phone_number'],
+        "call_id": data['call_id'], # Expected UUID string
+        "user_id": data.get('user_id', f"unknown_{phone}"), # Fallback
+        
+        "phone_number": phone,
         "country_code": data.get('country_code', 'IN'),
+        
+        "total_calls": total_calls,
+        
         "is_first_time_caller": is_first,
-        "call_timestamp": datetime.datetime.utcnow().timestamp(),
-
-        # OTP
+        "call_timestamp": datetime.datetime.utcnow(),
+        
         "otp_sent": data.get('otp_sent', False),
         "otp_verified": data.get('otp_verified', False),
         "otp_attempts": data.get('otp_attempts', 0),
-
-        # Personal Details
-        "personal_details_provided": data.get('personal_details', {}),
+        
+        "personal_details_provided": bool(data.get('personal_details')),
         "personal_details_verified": data.get('personal_details_verified', False),
-
-        # Audio
-        "audio_file_id": audio_id,
+        
+        "audio_file_id": formatted_audio_id, # Strict Format
+        "audio_sequence_number": next_seq,
         "audio_hash": audio_hash,
         "audio_duration_seconds": data.get('audio_duration', 0),
-
-        # AI Detection
+        
         "ai_audio_probability": data.get('ai_audio_probability', 0.0),
         "is_ai_generated_audio": data.get('ai_audio_probability', 0.0) > 0.8,
-
-        # Voice Matching
         "voice_match_score": data.get('voice_match_score', 0.0),
-        "audio_matched_with_existing_record": not is_first,
+        
+        "audio_matched_with_existing_record": not is_first, # Simple logic
         "matched_call_id": data.get('matched_call_id'),
         
-        # Store embedding for future comparisons (Crucial for Baseline)
-        "voice_embedding": data.get('voice_embedding_bytes'), 
-
-        # Final Risk
+        "voice_embedding": data.get('voice_embedding_bytes'), # Vector/Blob
+        
         "fraud_risk_score": data.get('fraud_risk_score', 0),
+        
+        "phone_trust_score": phone_trust,
+        "user_id_trust_score": user_trust,
+        
+        "related_call_ids": [],
         "verification_status": data.get('verification_status', "FAILED")
     }
     

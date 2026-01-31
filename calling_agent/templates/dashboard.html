@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Sentinel | Agent Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+        }
+
+        .status-badge-high {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-badge-medium {
+            background-color: #ffedd5;
+            color: #9a3412;
+        }
+
+        .status-badge-low {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+
+        /* Pulse animation for active recording */
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.33);
+            }
+
+            80%,
+            100% {
+                opacity: 0;
+            }
+        }
+
+        .recording-pulse {
+            position: relative;
+        }
+
+        .recording-pulse::before {
+            content: '';
+            position: absolute;
+            left: -10px;
+            top: -10px;
+            right: -10px;
+            bottom: -10px;
+            border: 2px solid #ef4444;
+            border-radius: 50%;
+            animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+    </style>
+</head>
+
+<body class="text-gray-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- Navbar -->
+    <nav class="bg-white border-b border-gray-200 h-16 flex-none z-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="bg-indigo-600 text-white p-2 rounded-lg">
+                    <i data-lucide="shield-check" class="w-6 h-6"></i>
+                </div>
+                <h1
+                    class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+                    Voice Sentinel <span class="text-gray-400 font-medium text-sm ml-2">Agent Console</span>
+                </h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <span
+                    class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                    System Online
+                </span>
+                <div
+                    class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
+                    A
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+
+        <!-- Sidebar / Session List -->
+        <div class="w-96 bg-white border-r border-gray-200 flex flex-col z-10">
+            <div class="p-4 border-b border-gray-100 bg-gray-50">
+                <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Active Sessions</h2>
+                <div class="relative">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+                    <input type="text" placeholder="Filter by Phone..."
+                        class="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
+                </div>
+            </div>
+
+            <div id="session-list" class="flex-1 overflow-y-auto p-2 space-y-2">
+                <!-- Session items will be injected here -->
+                <div class="text-center py-10 text-gray-400 text-sm">Waiting for calls...</div>
+            </div>
+        </div>
+
+        <!-- Detail View -->
+        <div class="flex-1 bg-gray-50/50 p-6 overflow-y-auto flex flex-col relative">
+
+            <!-- Empty State -->
+            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 z-0">
+                <div class="bg-white p-6 rounded-full shadow-sm mb-4">
+                    <i data-lucide="phone-off" class="w-12 h-12 text-gray-300"></i>
+                </div>
+                <p class="text-lg font-medium">No Session Selected</p>
+                <p class="text-sm text-gray-400">Select a session from the sidebar to monitor.</p>
+            </div>
+
+            <!-- Active Session Content -->
+            <div id="active-session-view" class="hidden flex-col h-full z-10 max-w-5xl mx-auto w-full">
+
+                <!-- Header Card -->
+                <div class="glass-panel rounded-2xl p-6 mb-6">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <div class="flex items-center gap-3 mb-1">
+                                <h2 id="view-phone" class="text-2xl font-bold text-gray-900">+91 98765 43210</h2>
+                                <span id="view-status-badge"
+                                    class="px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">IN
+                                    PROGRESS</span>
+                            </div>
+                            <p class="text-sm text-gray-500 flex items-center gap-2">
+                                <i data-lucide="user" class="w-4 h-4"></i>
+                                <span id="view-account">ACC_12345</span>
+                                <span class="text-gray-300">|</span>
+                                <span id="view-id" class="font-mono text-xs">ID: 550e8400-e29b</span>
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs text-gray-400 mb-1">Risk Score</div>
+                            <div id="view-risk-level" class="text-2xl font-bold text-gray-800">PENDING</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
+
+                    <!-- Left: Metrics -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <!-- Verification Cards -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- Voice Match -->
+                            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div class="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                                        <i data-lucide="fingerprint" class="w-5 h-5"></i>
+                                    </div>
+                                    <span id="view-match-score" class="text-lg font-bold text-gray-900">--%</span>
+                                </div>
+                                <h3 class="text-sm font-medium text-gray-600">Voice Match</h3>
+                                <div class="w-full bg-gray-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                                    <div id="view-match-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Liveness -->
+                            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div class="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                                        <i data-lucide="activity" class="w-5 h-5"></i>
+                                    </div>
+                                    <span id="view-liveness" class="text-lg font-bold text-gray-900">--</span>
+                                </div>
+                                <h3 class="text-sm font-medium text-gray-600">Liveness Check</h3>
+                                <p class="text-xs text-gray-400 mt-1">AI Probability Analysis</p>
+                            </div>
+                        </div>
+
+                        <!-- Timeline / Transcript Placeholder -->
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex-1 min-h-[200px]">
+                            <h3 class="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>
+                                Call Transcript (Live)
+                            </h3>
+                            <div class="space-y-3">
+                                <!-- Mock Items -->
+                                <div class="flex gap-3">
+                                    <div
+                                        class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-none">
+                                        <i data-lucide="bot" class="w-4 h-4 text-gray-500"></i>
+                                    </div>
+                                    <div
+                                        class="bg-gray-50 rounded-lg rounded-tl-none p-3 text-sm text-gray-600 max-w-[80%]">
+                                        Please state your full name for verification.
+                                    </div>
+                                </div>
+                                <div class="flex gap-3 flex-row-reverse">
+                                    <div
+                                        class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-none">
+                                        <i data-lucide="user" class="w-4 h-4 text-indigo-600"></i>
+                                    </div>
+                                    <div
+                                        class="bg-indigo-50 rounded-lg rounded-tr-none p-3 text-sm text-indigo-900 max-w-[80%]">
+                                        My name is John Doe.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Actions -->
+                    <div class="flex flex-col gap-4">
+                        <!-- Intervention Panel -->
+                        <div
+                            class="bg-white p-6 rounded-2xl shadow-lg border border-indigo-100 flex flex-col items-center justify-center text-center h-full relative overflow-hidden">
+                            <div
+                                class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500">
+                            </div>
+
+                            <h3 class="text-sm font-bold text-gray-800 mb-6">Agent Intervention</h3>
+
+                            <button id="btn-record"
+                                class="w-24 h-24 rounded-full bg-red-50 text-red-500 hover:bg-red-100 hover:scale-105 transition-all flex items-center justify-center mb-4 focus:outline-none">
+                                <i data-lucide="mic" class="w-10 h-10"></i>
+                            </button>
+
+                            <p id="mic-status" class="text-sm font-medium text-gray-600">Hold to Speak</p>
+                            <p class="text-xs text-gray-400 mt-2 text-center px-4">Audio will be streamed to the user
+                                immediately.</p>
+
+                            <div id="sending-indicator"
+                                class="hidden mt-4 items-center gap-2 text-xs font-semibold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
+                                <i data-lucide="upload-cloud" class="w-3 h-3 animate-bounce"></i> Sending...
+                            </div>
+                        </div>
+
+                        <!-- Data Panel -->
+                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Extracted Data
+                            </h3>
+                            <div class="space-y-3 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">OTP Status</span>
+                                    <span class="font-medium text-green-600">Verified</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">DOB</span>
+                                    <span class="font-medium text-gray-800">12/05/1985</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Intent</span>
+                                    <span class="font-medium text-gray-800 text-right">Credit Limit Increase</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        lucide.createIcons();
+
+        // State
+        let selectedSessionId = null;
+        let sessionsData = [];
+        let isRecording = false;
+        let mediaRecorder;
+        let audioChunks = [];
+
+        const sessionListEl = document.getElementById('session-list');
+        const emptyStateEl = document.getElementById('empty-state');
+        const activeViewEl = document.getElementById('active-session-view');
+        const recordBtn = document.getElementById('btn-record');
+        const micStatus = document.getElementById('mic-status');
+        const sendingIndicator = document.getElementById('sending-indicator');
+
+        // --- Polling Sessions ---
+        async function fetchSessions() {
+            try {
+                const res = await fetch('/agent/api/sessions');
+                const data = await res.json();
+                updateSessionList(data);
+            } catch (err) {
+                console.error("Poll Error:", err);
+            }
+        }
+
+        function updateSessionList(data) {
+            sessionsData = data;
+            sessionListEl.innerHTML = '';
+
+            if (data.length === 0) {
+                sessionListEl.innerHTML = '<div class="text-center py-10 text-gray-400 text-sm">Waiting for calls...</div>';
+                return;
+            }
+
+            data.forEach(session => {
+                const isActive = session.id === selectedSessionId;
+                const riskColor = getRiskColor(session.risk_level);
+
+                const card = document.createElement('div');
+                card.className = `p-4 rounded-xl cursor-pointer transition-all border ${isActive ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-gray-100 hover:bg-gray-50'}`;
+                card.onclick = () => selectSession(session.id);
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="font-bold text-gray-800">${session.phone || 'Unknown'}</span>
+                        <span class="text-xs font-bold px-2 py-0.5 rounded ${riskColor.bg} ${riskColor.text}">${session.risk_level}</span>
+                    </div>
+                    <div class="flex justify-between items-end">
+                        <div class="text-xs text-gray-500">
+                            ID: ${session.id.substring(0, 8)}...
+                        </div>
+                        <div class="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                           Match: ${session.voice_match}%
+                        </div>
+                    </div>
+                `;
+                sessionListEl.appendChild(card);
+            });
+
+            // Update Active View if open
+            if (selectedSessionId) {
+                const current = data.find(s => s.id === selectedSessionId);
+                if (current) updateActiveView(current);
+            }
+        }
+
+        function selectSession(id) {
+            selectedSessionId = id;
+            emptyStateEl.classList.add('hidden');
+            activeViewEl.classList.remove('hidden');
+            activeViewEl.classList.add('flex');
+
+            // Immediately render current data
+            const session = sessionsData.find(s => s.id === id);
+            if (session) updateActiveView(session);
+
+            fetchSessions(); // Force refresh to highlight
+        }
+
+        function updateActiveView(session) {
+            document.getElementById('view-phone').innerText = session.phone || 'Unknown';
+            document.getElementById('view-account').innerText = session.account_id || 'N/A';
+            document.getElementById('view-id').innerText = session.id;
+
+            // Risk
+            const riskEl = document.getElementById('view-risk-level');
+            riskEl.innerText = session.risk_level;
+            const rColor = getRiskColor(session.risk_level);
+            riskEl.className = `text-2xl font-bold ${rColor.text}`;
+
+            // Voice Match
+            document.getElementById('view-match-score').innerText = session.voice_match + '%';
+            document.getElementById('view-match-bar').style.width = session.voice_match + '%';
+
+            // Liveness (Mock for display as not in api/sessions yet, defaulting)
+            const isHighRisk = session.risk_level === 'HIGH';
+            document.getElementById('view-liveness').innerText = isHighRisk ? 'Suspicious' : 'Verified';
+            document.getElementById('view-liveness').className = `text-lg font-bold ${isHighRisk ? 'text-red-600' : 'text-emerald-600'}`;
+        }
+
+        function getRiskColor(level) {
+            if (level === 'HIGH') return { bg: 'bg-red-100', text: 'text-red-700' };
+            if (level === 'MEDIUM') return { bg: 'bg-orange-100', text: 'text-orange-700' };
+            return { bg: 'bg-green-100', text: 'text-green-700' };
+        }
+
+        // --- Audio Recording Logic ---
+
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = e => {
+                    audioChunks.push(e.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    audioChunks = [];
+                    if (selectedSessionId) {
+                        await sendAudio(audioBlob);
+                    }
+                };
+            }).catch(err => {
+                console.error("Mic Error:", err);
+                micStatus.innerText = "Mic Access Denied";
+            });
+        }
+
+        // Mouse Events for Push-to-Talk
+        recordBtn.addEventListener('mousedown', startRecording);
+        recordBtn.addEventListener('mouseup', stopRecording);
+        recordBtn.addEventListener('mouseleave', () => {
+            if (isRecording) stopRecording();
+        });
+
+        function startRecording() {
+            if (!mediaRecorder || !selectedSessionId) return;
+            isRecording = true;
+            audioChunks = [];
+            mediaRecorder.start();
+
+            recordBtn.classList.add('recording-pulse', 'bg-red-100', 'text-red-600');
+            micStatus.innerText = "Recording... Release to Send";
+        }
+
+        function stopRecording() {
+            if (!isRecording) return;
+            isRecording = false;
+            mediaRecorder.stop();
+
+            recordBtn.classList.remove('recording-pulse', 'bg-red-100', 'text-red-600');
+            micStatus.innerText = "Hold to Speak";
+        }
+
+        async function sendAudio(blob) {
+            sendingIndicator.classList.remove('hidden');
+            sendingIndicator.classList.add('flex');
+
+            const formData = new FormData();
+            formData.append('file', blob, 'agent_msg.wav');
+            formData.append('session_id', selectedSessionId);
+
+            try {
+                await fetch('/agent/speak', {
+                    method: 'POST',
+                    body: formData
+                });
+            } catch (e) {
+                console.error("Send Error", e);
+                alert("Failed to send audio");
+            } finally {
+                sendingIndicator.classList.add('hidden');
+                sendingIndicator.classList.remove('flex');
+            }
+        }
+
+        // Poll every 3 seconds
+        setInterval(fetchSessions, 3000);
+        fetchSessions();
+
+    </script>
+</body>
+
+</html>
