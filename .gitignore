@@ -7,6 +7,5 @@ __pycache__/
 # Large Files
 *.wav
 *.mp3
-*.pkl
 *.db
 *.bin
