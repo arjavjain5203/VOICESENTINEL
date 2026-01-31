@@ -1,103 +1,131 @@
+import pymongo
+import gridfs
+import json
+import numpy as np
 import os
 import datetime
-import pymongo
-from pymongo import MongoClient
-import ssl
-from dotenv import load_dotenv
-import bson.binary
-
-# Load env variables from .env file
-load_dotenv()
+import hashlib
 
 # MongoDB Configuration
-# Default to the provided Cloud Atlas URL
-DEFAULT_DB_URL = "mongodb+srv://kushagrapandey0333_db_user:9310022664d@client.0hwe3gz.mongodb.net/?retryWrites=true&w=majority"
-DB_URL = os.getenv("DATABASE_URL", DEFAULT_DB_URL)
+MONGO_URI = "mongodb://localhost:27017/"
 DB_NAME = "voice_sentinel"
+COLLECTION_NAME = "call_verification_records"
 
-client = None
-db = None
-
-def init_db():
-    """
-    Initializes the MongoDB connection.
-    """
-    global client, db
-    try:
-        # Create a new client and connect to the server
-        # 'ssl_cert_reqs=ssl.CERT_NONE' might be needed for some environments/dev certificates, 
-        # but try standard connection first or use certifi if needed.
-        import certifi
-        client = MongoClient(DB_URL, serverSelectionTimeoutMS=5000, tlsCAFile=certifi.where())
-        
-        # Send a ping to confirm a successful connection
-        client.admin.command('ping')
-        print("Pinged your deployment. You successfully connected to MongoDB!")
-        
-        db = client[DB_NAME]
-        
-        # Create indexes
-        db.users.create_index("account_id", unique=True)
-        db.call_records.create_index("account_id")
-        db.call_records.create_index([("call_timestamp", pymongo.DESCENDING)])
-        
-    except Exception as e:
-        print(f"Error connecting to MongoDB: {e}")
-        raise e
-
-def get_db():
-    """
-    Returns the database instance. Initialize if not already done.
-    """
-    global db
-    if db is None:
-        init_db()
+def get_db_connection():
+    client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
+    db = client[DB_NAME]
     return db
 
-def save_call_record(db_conn, record_data):
-    """
-    Saves a new call record to 'call_records' collection.
-    """
-    # Ensure timestamp is datetime object
-    if "call_timestamp" not in record_data:
-        record_data["call_timestamp"] = datetime.datetime.utcnow()
-        
-    result = db_conn.call_records.insert_one(record_data)
-    record_data["_id"] = result.inserted_id
-    return record_data
+def init_db():
+    try:
+        client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
+        client.server_info()
+        print(f"[Database] Connected to MongoDB (Local): {DB_NAME}")
+    except Exception as e:
+        print(f"❌ [Database Error] Could not connect to MongoDB: {e}")
 
-def get_account_history(db_conn, account_id, limit=5):
+def get_baseline_audio(phone_number):
     """
-    Fetches the last N records for an account.
+    Retrieves the baseline audio embedding (or raw bytes) for a repeat caller.
+    We look for the FIRST successfully verified record.
     """
-    cursor = db_conn.call_records.find({"account_id": account_id}).sort("call_timestamp", -1).limit(limit)
-    return list(cursor)
-
-def get_user_embedding(db_conn, account_id):
-    """
-    Retrieves the voice embedding for a user.
-    Returns: binary/bytes embedding or None if user not found.
-    """
-    user = db_conn.users.find_one({"account_id": account_id}, {"voice_embedding": 1})
-    if user and "voice_embedding" in user:
-        return user["voice_embedding"]
+    db = get_db_connection()
+    # Find the oldest verified record for this number
+    record = db[COLLECTION_NAME].find_one(
+        {"phone_number": phone_number, "verification_status": "VERIFIED"},
+        sort=[("call_timestamp", 1)] # Oldest first
+    )
+    
+    if record and record.get('voice_embedding'):
+        return np.frombuffer(record['voice_embedding'], dtype=np.float32)
     return None
 
-def save_user_embedding(db_conn, account_id, embedding_bytes):
+def is_first_time_caller(phone_number):
+    db = get_db_connection()
+    count = db[COLLECTION_NAME].count_documents({"phone_number": phone_number})
+    return count == 0
+
+def save_verification_record(data):
     """
-    Saves or updates a user's voice embedding.
-    embedding_bytes: The embedding as bytes (from numpy array or resemblyzer).
+    Saves the consolidated Verification Record.
     """
-    user_data = {
-        "account_id": account_id,
-        "voice_embedding": bson.binary.Binary(embedding_bytes),
-        "updated_at": datetime.datetime.utcnow()
+    db = get_db_connection()
+    fs = gridfs.GridFS(db)
+    
+    # 1. Handle Audio Upload
+    audio_id = None
+    audio_hash = None
+    audio_bytes = data.get('audio_bytes')
+    
+    if audio_bytes:
+        try:
+            filename = f"{data['call_id']}.wav"
+            audio_id = fs.put(audio_bytes, filename=filename, content_type="audio/wav")
+            audio_hash = hashlib.sha256(audio_bytes).hexdigest()
+        except Exception as e:
+            print(f"[GridFS Error] {e}")
+
+    # 2. Determine "First Time" Status (if not explicitly passed)
+    is_first = data.get('is_first_time_caller')
+    if is_first is None:
+        is_first = is_first_time_caller(data['phone_number'])
+
+    # 3. Construct Document
+    doc = {
+        "call_id": data['call_id'],
+        "phone_number": data['phone_number'],
+        "country_code": data.get('country_code', 'IN'),
+        "is_first_time_caller": is_first,
+        "call_timestamp": datetime.datetime.utcnow().timestamp(),
+
+        # OTP
+        "otp_sent": data.get('otp_sent', False),
+        "otp_verified": data.get('otp_verified', False),
+        "otp_attempts": data.get('otp_attempts', 0),
+
+        # Personal Details
+        "personal_details_provided": data.get('personal_details', {}),
+        "personal_details_verified": data.get('personal_details_verified', False),
+
+        # Audio
+        "audio_file_id": audio_id,
+        "audio_hash": audio_hash,
+        "audio_duration_seconds": data.get('audio_duration', 0),
+
+        # AI Detection
+        "ai_audio_probability": data.get('ai_audio_probability', 0.0),
+        "is_ai_generated_audio": data.get('ai_audio_probability', 0.0) > 0.8,
+
+        # Voice Matching
+        "voice_match_score": data.get('voice_match_score', 0.0),
+        "audio_matched_with_existing_record": not is_first,
+        "matched_call_id": data.get('matched_call_id'),
+        
+        # Optional: Store embedding for future comparisons
+        "voice_embedding": data.get('voice_embedding_bytes'), 
+
+        # Final Risk
+        "fraud_risk_score": data.get('fraud_risk_score', 0),
+        "verification_status": data.get('verification_status', "FAILED")
     }
     
-    # Upsert: Update if exists, Insert if new
-    db_conn.users.update_one(
-        {"account_id": account_id},
-        {"$set": user_data},
-        upsert=True
-    )
-    print(f"User {account_id} enrolled/updated in Voice Auth DB.")
+    try:
+        result = db[COLLECTION_NAME].insert_one(doc)
+        print(f"[Database] Saved Verification Record: {result.inserted_id}")
+        return doc
+    except Exception as e:
+        print(f"[Database Error] Save failed: {e}")
+        return None
+
+# Deprecated / Wrapper functions for compatibility if needed
+def get_user_embedding(account_id):
+    # This might need to look up by phone_number instead of account_id now?
+    # For now, let's assume account_id is phone_number or needed for migration.
+    # We'll map account_id -> phone_number lookup if possible, or just return None
+    # to force a fresh baseline if strict new schema is used.
+    return None 
+
+def get_recent_calls(account_id, limit=5):
+    # Map account_id to phone_number query logic if needed
+    # returning empty list to avoid breaking legacy calls
+    return []

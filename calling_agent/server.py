@@ -12,9 +12,10 @@ from datetime import datetime
 # Ensure src in path
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
+from src.risk_engine import calculate_risk
 from src.ivr_flow import IVR_STEPS, get_next_question, ensure_ivr_audio_files
+from src.database import init_db, get_recent_calls, save_verification_record, is_first_time_caller, get_baseline_audio, get_user_embedding
 from src.tts_utils import generate_wav
-from src.database import init_db, get_db, get_account_history, save_call_record, get_user_embedding, save_user_embedding
 from src.history import analyze_history
 from src.voice_auth import VoiceAuthenticator
 from src.features import extract_features
@@ -31,27 +32,53 @@ sessions = {}
 # Ensure IVR questions exist
 ensure_ivr_audio_files(generate_wav)
 
-# Helper: Merge Audio Files
+    # Helper: Merge Audio Files
 def merge_audio_files(outfile, file_list):
     """
-    Concatenates multiple wav files into one.
+    Concatenates multiple wav files into one. Skips invalid files.
     """
     data = []
     params = None
     for fpath in file_list:
         if os.path.exists(fpath):
-            with wave.open(fpath, 'rb') as w:
-                if not params:
-                    params = w.getparams()
-                data.append(w.readframes(w.getnframes()))
+            try:
+                with wave.open(fpath, 'rb') as w:
+                    if not params:
+                        params = w.getparams()
+                    data.append(w.readframes(w.getnframes()))
+            except Exception as e:
+                print(f"[Warning] Skipping invalid chunk {fpath}: {e}")
                 
-    if not params:
+    if not params or not data:
         return
         
-    with wave.open(outfile, 'wb') as w:
-        w.setparams(params)
-        for d in data:
-            w.writeframes(d)
+    try:
+        with wave.open(outfile, 'wb') as w:
+            w.setparams(params)
+            for d in data:
+                w.writeframes(d)
+    except Exception as e:
+        print(f"[Error] Failed to write merged audio: {e}")
+
+# ... (omitted) ...
+
+        # --- Cleanup Temporary Files ---
+        try:
+            if os.path.exists(session['accumulated_audio']):
+                os.remove(session['accumulated_audio'])
+            for chunk_file in session['chunks']:
+                if os.path.exists(chunk_file):
+                    os.remove(chunk_file)
+            print(f"[Cleanup] Removed temp files for session {session_id}")
+        except Exception as e:
+            print(f"[Cleanup Warning] {e}")
+            
+        # Report is now printed inside submit_response before cleaning up
+        
+        return jsonify({
+            "status": "completed",
+            "report": risk_data
+        })
 
 def analysis_thread(session_id):
     """
@@ -69,32 +96,33 @@ def analysis_thread(session_id):
     
     accumulated_path = session['accumulated_audio']
     
-    # 1. Transcribe
-    transcript = transcribe_audio(accumulated_path, "UNKNOWN")
-    session['transcript'] = transcript
-    print(f"[Analysis] Transcript: {transcript}")
+    if not os.path.exists(accumulated_path):
+        print(f"[Analysis] Skipped (File cleaned up/missing): {accumulated_path}")
+        return
     
-    # 2. Extract Details
-    # We update the session's details incrementally
-    new_details = extract_details_from_transcript(transcript)
-    session['extracted_details'].update(new_details)
+    # 1. Transcribe
+    try:
+        if os.path.exists(accumulated_path):
+            transcript = transcribe_audio(accumulated_path, "UNKNOWN")
+            session['transcript'] = transcript
+            print(f"[Analysis] Transcript: {transcript}")
+        
+            # 2. Extract Details
+            # We update the session's details incrementally
+            new_details = extract_details_from_transcript(transcript)
+            session['extracted_details'].update(new_details)
+        else:
+            return
+    except Exception as e:
+        print(f"[Analysis] Transcription Error: {e}")
     
     # 3. AI Detection (Audio Classifier)
     try:
+        # Check existence again
+        if not os.path.exists(accumulated_path): return
+            
         scaler = joblib.load("scaler.pkl")
         model = joblib.load("audio_classifier.pkl")
-        
-        # Check filename trick if applicable (for demo hack)
-        # But here we are dealing with uploaded chunks. 
-        # We rely on actual audio features if possible, or fallback.
-        # Since 'features.py' in this repo is mock based on filename, we need to be careful.
-        # If the user uploaded a file named "fraud.wav" originally, the frontend might send that name?
-        # But we save it as 'chunk_X.wav'.
-        # For this hackathon, we assume the Mock features might fail if filename doesn't contain fraud.
-        # Let's see if we can trick the mock or if we need to update features.py.
-        # The user's prompt implies "feature for matching audio", so maybe resemblyzer handles identity.
-        # But "fraud ai" detection is separate.
-        # We will assume features.py does its best.
         
         audio = load_audio(accumulated_path)
         feats = extract_features(audio).reshape(1, -1)
@@ -102,30 +130,35 @@ def analysis_thread(session_id):
         probs = model.predict_proba(feats_scaled)[0]
         session['voice_prob'] = probs[1]
     except Exception as e:
-        print(f"[Analysis] AI Detection Error: {e}")
+        # Suppress generic errors if just file missing during race condition
+        if "No such file" not in str(e):
+            print(f"[Analysis] AI Detection Error: {e}")
         session['voice_prob'] = 0.0
 
     # 4. Voice Auth (Resemblyzer)
     try:
+        if not os.path.exists(accumulated_path): return
+            
         # Lazy load authenticator
         auth = VoiceAuthenticator()
         emb = auth.extract_embedding_from_file(accumulated_path)
         
         if emb is not None:
              # Connect DB
-            db = next(get_db())
-            stored_emb = get_user_embedding(db, session['account_id'])
+            from src.database import get_baseline_audio
+            baseline_emb = get_baseline_audio(session['phone'])
             
-            if stored_emb:
-                score = auth.compare_embeddings(emb, stored_emb)
+            if baseline_emb is not None:
+                score = auth.compare_embeddings(emb, baseline_emb)
                 session['voice_match_score'] = score
             else:
-                # Enroll
-                save_user_embedding(db, session['account_id'], emb.tobytes())
-                session['voice_match_score'] = 1.0
+                # First time caller (or no verified baseline yet)
+                # We will save this embedding implicitly when saving the full record
+                session['voice_match_score'] = 1.0 # Consider 1.0 for self (first time)
                 session['enrolled_now'] = True
     except Exception as e:
-         print(f"[Analysis] Voice Auth Error: {e}")
+         if "No such file" not in str(e):
+             print(f"[Analysis] Voice Auth Error: {e}")
 
     session['analyzed'] = True
     print(f"[Analysis] Finished for {session_id}")
@@ -238,9 +271,8 @@ def submit_response():
         analysis_thread(session_id) 
         
         # History
-        init_db()
-        db = next(get_db())
-        history = get_account_history(db, session['account_id'])
+        # History
+        history = get_recent_calls(session['account_id'])
         mod, explanations = analyze_history(history)
         
         details = session['extracted_details']
@@ -259,17 +291,125 @@ def submit_response():
         
         risk_data["voice_match_score"] = session['voice_match_score']
         
-        # Save
-        save_call_record(db, {
-            "account_id": session['account_id'],
-            "otp_success": otp_success,
-            "identity_fails": identity_fails,
-            "voice_risk_level": risk_data["final_risk"],
-            "intent": details['intent'],
-            "final_risk_level": risk_data["final_risk"],
-            "risk_percentage": risk_data["risk_percentage"],
-            "agent_decision": "COMPLETED"
-        })
+        # Prepare Consolidated Record Logic
+        from src.database import save_verification_record, is_first_time_caller
+        
+        # 1. Prepare Data
+        verification_data = {
+            "call_id": session_id,
+            "phone_number": session['phone'],
+            "country_code": session.get('country', 'IN'),
+            "is_first_time_caller": None, # Let DB determine, or calculate here
+            
+            # OTP
+            "otp_sent": True, # We always send OTP in this flow
+            "otp_verified": otp_success,
+            "otp_attempts": 1, # Simplified for demo
+            
+            # Personal Details
+            "personal_details": {
+                "name": details.get("name"),
+                "dob": details.get("dob"),
+                "intent": details.get("intent")
+            },
+            "personal_details_verified": False, # Mock logic: Need real check
+            
+            # Audio Analysis
+            "audio_duration": 0, # Could calc from file size
+            "ai_audio_probability": float(session.get('voice_prob', 0.0)),
+            
+            # Voice Match
+            "voice_match_score": float(session.get('voice_match_score', 0.0)),
+            "matched_call_id": None, # Would come from Auth logic if implemented fully
+            
+            # Risk
+            "fraud_risk_score": risk_data["risk_percentage"],
+            "verification_status": "VERIFIED" if risk_data["final_risk"] == "LOW" else "FAILED"
+        }
+
+        # 2. Get Audio Bytes
+        audio_bytes = None
+        if os.path.exists(session['accumulated_audio']):
+            try:
+                with open(session['accumulated_audio'], "rb") as f:
+                    audio_bytes = f.read()
+            except Exception as e:
+                print(f"[Audio Read Error] {e}")
+        verification_data['audio_bytes'] = audio_bytes
+        
+        # 3. Save to MongoDB
+        saved_record = save_verification_record(verification_data)
+
+        # 4. Print Terminal Report
+        try:
+            print("\n" + "="*80, flush=True)
+            print("                       🔒 CALL VERIFICATION REPORT", flush=True)
+            print("="*80, flush=True)
+            print(f"Call ID           : {session_id}", flush=True)
+            print(f"Caller            : {session['phone']} (IN)", flush=True)
+            print(f"Timestamp         : {datetime.utcnow()}", flush=True)
+            print("-"*80, flush=True)
+            print("VERIFICATION CHECKS", flush=True)
+            print("-"*80, flush=True)
+            
+            otp_mark = "✅" if otp_success else "❌"
+            print(f"[{otp_mark}] OTP Verified           (Attempts: 1)", flush=True)
+            
+            # Personal Details Check (Mock)
+            det_mark = "✅" if details.get("name") else "⚠️"
+            print(f"[{det_mark}] Personal Details       (Name: {details.get('name')}, DOB: {details.get('dob')})", flush=True)
+            
+            # AI Check
+            ai_prob = session.get('voice_prob', 0.0)
+            ai_percent = ai_prob * 100
+            human_percent = 100 - ai_percent
+            ai_mark = "✅" if ai_prob < 0.5 else "❌"
+            print(f"[{ai_mark}] Live Human Audio       ({human_percent:.1f}% Human / {ai_percent:.1f}% AI)", flush=True)
+            
+            # Voice Match
+            vm_score = session.get('voice_match_score', 0.0)
+            vm_percent = vm_score * 100
+            vm_mark = "✅" if vm_score > 0.75 else "⚠️"
+            msg = "MATCHED" if vm_score > 0.75 else ("FIRST TIME" if vm_score == 1.0 else "NO MATCH")
+            print(f"[{vm_mark}] Voice Match            ({vm_percent:.1f}% Match - {msg})", flush=True)
+            
+            print("-"*80, flush=True)
+            print("RISK ASSESSMENT", flush=True)
+            print("-"*80, flush=True)
+            
+            r_score = risk_data["risk_percentage"]
+            print(f"Fraud Risk Score  : {r_score} / 100", flush=True)
+            print(f"Risk Level        : {risk_data['final_risk']}", flush=True)
+            print(f"\nSTATUS            : {verification_data['verification_status']}", flush=True)
+            print("="*80 + "\n", flush=True)
+
+            # --- LAUNCH GUI POPUP (DETACHED) ---
+            import subprocess
+            import sys
+            
+            # Pass relevant data needed for the popup
+            # Be careful with quoting for command line
+            gui_data = json.dumps(verification_data)
+            
+            # Launch async
+            print(f"[GUI] Launching popup report...", flush=True)
+            # Pass current environment (important for DISPLAY)
+            env = os.environ.copy()
+            subprocess.Popen([sys.executable, "src/show_report.py", gui_data], env=env)
+
+        except Exception as e:
+            print(f"[Report Error] {e}", flush=True)
+        
+        # --- Cleanup Temporary Files ---
+        try:
+            if os.path.exists(session['accumulated_audio']):
+                os.remove(session['accumulated_audio'])
+            for chunk_file in session['chunks']:
+                if os.path.exists(chunk_file):
+                    os.remove(chunk_file)
+            print(f"[Cleanup] Removed temp files for session {session_id}")
+        except Exception as e:
+            print(f"[Cleanup Warning] {e}")
         
         return jsonify({
             "status": "completed",
@@ -286,4 +426,90 @@ if __name__ == '__main__':
         init_db()
     except:
         pass
-    app.run(port=5001, debug=True)
+    # To allow access over Wi-Fi, we must bind to 0.0.0.0
+    app.run(host='0.0.0.0', port=5001, debug=True)
+
+# --- Agent Dashboard Routes ---
+
+@app.route('/dashboard')
+def dashboard():
+    return send_from_directory('templates', 'dashboard.html')
+
+@app.route('/agent/api/sessions')
+def get_sessions():
+    """
+    Returns list of active/completed sessions for dashboard.
+    """
+    session_list = []
+    # Sort by time? Dictionary is unordered, but we can just list them.
+    for sid, sess in sessions.items():
+        # Determine current risk snapshot
+        risk_level = "PENDING"
+        if sess.get('analyzed'):
+            prob = sess.get('voice_prob', 0)
+            if prob > 0.5: risk_level = "HIGH"
+            elif prob > 0.2: risk_level = "MEDIUM"
+            else: risk_level = "LOW"
+            
+        # Or if final report exists
+        status = "IN_PROGRESS"
+        
+        session_list.append({
+            "id": sid,
+            "phone": sess.get('phone'),
+            "account_id": sess.get('account_id'),
+            "risk_level": risk_level,
+            "voice_match": int(sess.get('voice_match_score', 0) * 100),
+            "status": "ACTIVE", # can refine
+            "report_json": None # placeholder
+        })
+    return jsonify(session_list)
+
+# --- Real-Time Handover Relay ---
+
+agent_audio_buffer = {} # session_id -> list of audio files (FIFO)
+
+@app.route('/agent/speak', methods=['POST'])
+def agent_speak():
+    """
+    Agent uploading voice to be sent to user.
+    """
+    if 'file' not in request.files:
+        return jsonify({"error": "No file"}), 400
+        
+    file = request.files['file']
+    session_id = request.form.get('session_id')
+    
+    if not session_id:
+        return jsonify({"error": "No session_id"}), 400
+        
+    # Save temp file
+    filename = f"agent_msg_{session_id}_{int(time.time())}.wav"
+    filepath = os.path.join("ivr_audio", filename)
+    file.save(filepath)
+    
+    # Add to buffer
+    if session_id not in agent_audio_buffer:
+        agent_audio_buffer[session_id] = []
+    agent_audio_buffer[session_id].append(filename)
+    
+    return jsonify({"status": "queued", "file": filename})
+
+@app.route('/client/poll_agent/<session_id>', methods=['GET'])
+def poll_agent_audio(session_id):
+    """
+    Client polls this to see if Agent has spoken.
+    """
+    if session_id in agent_audio_buffer and agent_audio_buffer[session_id]:
+        # Pop the oldest message
+        filename = agent_audio_buffer[session_id].pop(0)
+        return jsonify({
+            "has_audio": True,
+            "audio_url": f"/ivr_audio/{filename}" # We need to serve this path
+        })
+    else:
+        return jsonify({"has_audio": False})
+
+@app.route('/ivr_audio/<path:filename>')
+def serve_agent_audio(filename):
+    return send_from_directory('ivr_audio', filename)

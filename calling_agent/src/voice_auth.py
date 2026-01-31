@@ -17,7 +17,7 @@ class VoiceAuthenticator:
             embedding = self.encoder.embed_utterance(wav)
             return embedding
         except Exception as e:
-            print(f"Error extracting embedding: {e}")
+            # Silence error implicitly or log debug only
             return None
 
     def compare_embeddings(self, emb1, emb2):

@@ -17,38 +17,46 @@ def analyze_history(history_records):
     modifier = 0
     explanations = []
     
+    # Helper to safely get data
+    def get_intent(record):
+        return record.get('details', {}).get('intent')
+    
+    def get_risk(record):
+        return record.get('details', {}).get('final_risk_level', 'LOW')
+        
+    def get_timestamp(record):
+        return record.get('timestamp')
+    
     # 1. Repeated Intent (e.g., 3x Refund/SimSwap in recent history)
-    intents = [r.intent for r in history_records]
+    intents = [get_intent(r) for r in history_records]
     if len(intents) >= 3:
-        # Check if last 3 are same
-        if intents[0] == intents[1] == intents[2]:
+        # Check if last 3 are same (and not None)
+        if intents[0] is not None and intents[0] == intents[1] == intents[2]:
             modifier += 1
             explanations.append(f"Repeated Intent Detected: {intents[0]} (3x)")
             
     # 2. Previous Escalations / High Risk
     # If the VERY LAST call was High Risk, be cautious.
-    if history_records[0].final_risk_level == "HIGH":
+    if get_risk(history_records[0]) == "HIGH":
         modifier += 1
         explanations.append("Last call was HIGH Risk.")
         
     # 3. Frequency / Velocity (Simple check: 3 calls in 1 hour)
     # Using timestamp
     if len(history_records) >= 3:
-        t1 = history_records[0].call_timestamp
-        t3 = history_records[2].call_timestamp
-        # If SQLite returns strings, might need parsing. SQLAlchemy usually returns datetime.
-        if isinstance(t1, str):
-             # basic parser if needed, but assuming datetime objects
-             pass
-        else:
-             if (t1 - t3) < timedelta(hours=1):
+        t1 = get_timestamp(history_records[0])
+        t3 = get_timestamp(history_records[2])
+        
+        # t1, t3 are floats (timestamp). 
+        if t1 and t3:
+             if (t1 - t3) < 3600: # 1 hour in seconds
                  modifier += 1
                  explanations.append("High call velocity (3 calls in <1 hour).")
 
     # 4. Good Behavior (Redemption)
-    # If last 5 calls were LOW risk and OTP passed
+    # If last 5 calls were LOW risk and OTP passed (Risk from DB usually factors OTP)
     if len(history_records) >= 5:
-        recent_risks = [r.final_risk_level for r in history_records[:5]]
+        recent_risks = [get_risk(r) for r in history_records[:5]]
         if all(risk == "LOW" for risk in recent_risks):
             modifier -= 1
             explanations.append("Consistent Low Risk history (Trusted).")
