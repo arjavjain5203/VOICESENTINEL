@@ -1,0 +1,9 @@
+flask
+numpy
+scikit-learn
+joblib
+soundfile
+soundcard
+plyer
+gunicorn
+requests

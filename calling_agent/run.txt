@@ -1,0 +1,41 @@
+# VoiceSentinel - Execution Guide
+
+## Project Structure
+- **calling_agent/**: Contains the main fraud detection agent (Call Center side).
+- **user_File/**: Contains the personal monitor for regular users.
+
+## 1. How to Run the Call Center Agent
+This simulates the agent receiving a call.
+
+### Live Mode (Interactive)
+1. Navigate to the folder:
+   ```bash
+   cd calling_agent
+   ```
+2. Run the simulation:
+   ```bash
+   ../venv/bin/python main_simulation.py
+   ```
+
+### File Mode (Analyze specific audio)
+   ```bash
+   cd calling_agent
+   ../venv/bin/python main_simulation.py --audio-input fraud_ai.wav
+   ```
+
+## 2. How to Run the User Monitor
+This monitors your system audio to protect you.
+
+1. Navigate to the folder:
+   ```bash
+   cd user_File
+   ```
+2. Run the monitor:
+   ```bash
+   ../venv/bin/python monitor.py
+   ```
+   - Select Option 1 to record from microphone/system.
+   - Select Option 2 to analyze a file.
+
+## 3. Deployment
+- The `calling_agent` folder contains `Procfile` and `render-build.sh` for deployment to Render.

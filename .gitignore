@@ -3,8 +3,10 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
+
+# Large Files
 *.wav
-!legit.wav
-!fraud_ai.wav
-!ai_audio.wav
-!my_audio.wav
+*.mp3
+*.pkl
+*.db
+*.bin

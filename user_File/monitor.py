@@ -12,15 +12,16 @@ from plyer import notification
 # Add src to path
 sys.path.append(os.getcwd())
 # Also append src if running from root
-sys.path.append(os.path.join(os.getcwd(), 'src'))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
 
 from src.audio_utils import load_audio
 from src.features import extract_features
 
 # Constants
-MODEL_PATH = "audio_classifier.pkl"
-SCALER_PATH = "scaler.pkl"
-LOG_DIR = "regular_user/logs"
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audio_classifier.pkl")
+SCALER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scaler.pkl")
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 DURATION = 10.0 # Seconds
 SAMPLE_RATE = 16000
 
