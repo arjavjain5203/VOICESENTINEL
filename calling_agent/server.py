@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
+import json
 import os
 import uuid
 import threading
@@ -389,7 +390,14 @@ def submit_response():
             
             # Pass relevant data needed for the popup
             # Be careful with quoting for command line
-            gui_data = json.dumps(verification_data)
+            
+            # Sanitise data for JSON (remove bytes)
+            gui_safe_data = verification_data.copy()
+            if 'audio_bytes' in gui_safe_data: del gui_safe_data['audio_bytes']
+            if 'voice_embedding' in gui_safe_data: del gui_safe_data['voice_embedding']
+            if 'voice_embedding_bytes' in gui_safe_data: del gui_safe_data['voice_embedding_bytes'] # if present
+            
+            gui_data = json.dumps(gui_safe_data)
             
             # Launch async
             print(f"[GUI] Launching popup report...", flush=True)

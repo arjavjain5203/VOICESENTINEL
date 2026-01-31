@@ -55,9 +55,26 @@ def play_audio_from_url(url):
         with open("temp_playback.wav", "wb") as f:
             f.write(r.content)
             
-        # Play using aplay (Linux Safe)
-        import subprocess
-        subprocess.run(["aplay", "-q", "temp_playback.wav"], check=False)
+        # Play using PyAudio (Windows/Cross-platform Safe)
+        import wave
+        import pyaudio
+        
+        wf = wave.open("temp_playback.wav", 'rb')
+        p = pyaudio.PyAudio()
+        
+        stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+                        channels=wf.getnchannels(),
+                        rate=wf.getframerate(),
+                        output=True)
+        
+        data = wf.readframes(1024)
+        while len(data) > 0:
+            stream.write(data)
+            data = wf.readframes(1024)
+            
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
         
     except Exception as e:
         print(f"[Playback Error] {e}")
@@ -104,6 +121,13 @@ def main():
     global SESSION_ID
     
     print("=== Voice Sentinel User Client ===")
+    # Allow user to pick server (cloud / localhost / custom)
+    try:
+        global SERVER_URL
+        SERVER_URL = get_server_url()
+    except Exception:
+        # Keep default if prompting fails
+        pass
     
     # Combined Input
     raw_input = input("Enter Phone (Format: +Code Number, e.g. +91 9876543210): ").strip()

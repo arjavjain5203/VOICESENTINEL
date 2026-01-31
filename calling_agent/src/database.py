@@ -101,7 +101,7 @@ def save_verification_record(data):
         "audio_matched_with_existing_record": not is_first,
         "matched_call_id": data.get('matched_call_id'),
         
-        # Optional: Store embedding for future comparisons
+        # Store embedding for future comparisons (Crucial for Baseline)
         "voice_embedding": data.get('voice_embedding_bytes'), 
 
         # Final Risk
