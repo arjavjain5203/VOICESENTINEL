@@ -1,6 +1,6 @@
 flask
 numpy
-scikit-learn
+scikit-learn==1.7.0
 joblib
 soundfile
 soundcard
