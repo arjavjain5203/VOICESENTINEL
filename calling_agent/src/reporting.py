@@ -57,6 +57,10 @@ def generate_report(risk_data):
     if history_reasons:
         history_str = "; ".join(history_reasons)
     
+    # Voice Match Score
+    match_score = risk_data.get("voice_match_score", 0.0)
+    match_str = f"{match_score * 100:.2f}%"
+
     report = f"""
 __________________________________________________
            VOICESENTINEL FINAL REPORT             
@@ -65,6 +69,7 @@ __________________________________________________
 otp verified        : {otp_str}
 personal data check : {personal_data_str}
 voice Analysis      : {voice_percent} matching to AI
+voice Identity      : {match_str} match with enrolled user
 user intent         : {signals['intent']}
 history impact      : {history_impact} ({history_str})
 total risk chances  : {risk_percentage:.1f}% ({final_risk})

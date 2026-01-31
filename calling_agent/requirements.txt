@@ -17,3 +17,5 @@ cryptography
 soundcard
 plyer
 soundfile
+pymongo
+resemblyzer

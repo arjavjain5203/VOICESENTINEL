@@ -19,6 +19,9 @@ from src.reporting import generate_report
 from src.mic_utils import listen_and_transcribe
 from src.tts_utils import speak, generate_wav
 from src.asr_utils import transcribe_audio
+from src.database import get_db, get_account_history, save_call_record, init_db, get_user_embedding, save_user_embedding
+from src.history import analyze_history
+from src.voice_auth import VoiceAuthenticator
 
 # Global state
 CALL_STATE = {
@@ -28,8 +31,12 @@ CALL_STATE = {
     "intent": None,
     "audio_file": "session_accumulated.wav",
     "voice_prob": 0.0,
-    "voice_risk": "LOW"
+    "voice_risk": "LOW",
+    "voice_match_score": 0.0
 }
+
+# Initialize Authenticator (Global to load model once)
+authenticator = None
 
 def clear_screen():
     print("\033[H\033[J", end="")
@@ -62,8 +69,6 @@ def analyze_audio_file(filepath):
     print(f"\n[AI Analysis] Processing features from {filepath}...")
     try:
         # Check filename for mock logic (hackathon constraint)
-        # In a real system, this would be computed purely from the file content.
-        # Ensure we propagate filename signal for mock features.py
         target_path = filepath
         if "fraud" in filepath or "ai" in filepath:
              # Mock Hack: The feature extractor looks for 'fraud' in path
@@ -90,6 +95,39 @@ def analyze_audio_file(filepath):
         CALL_STATE["voice_prob"] = 0.0
         CALL_STATE["voice_risk"] = "LOW"
 
+def verify_voice_identity(filepath, account_id):
+    """
+    Verifies if the voice matches the enrolled user in MongoDB.
+    If new user, enrolls them.
+    Updates CALL_STATE["voice_match_score"].
+    """
+    global authenticator
+    if not authenticator:
+        authenticator = VoiceAuthenticator()
+        
+    print(f"\n[Voice Auth] Extracting embedding for Verification...")
+    embedding = authenticator.extract_embedding_from_file(filepath)
+    
+    if embedding is None:
+        print("[Voice Auth] Failed to extract embedding. Skipping verification.")
+        CALL_STATE["voice_match_score"] = 0.0
+        return
+
+    db = next(get_db())
+    stored_embedding = get_user_embedding(db, account_id)
+    
+    if stored_embedding:
+        print(f"[Voice Auth] User {account_id} found. Verifying...")
+        score = authenticator.compare_embeddings(embedding, stored_embedding)
+        CALL_STATE["voice_match_score"] = score
+        print(f"[Voice Auth] Match Score: {score:.2%}")
+    else:
+        print(f"[Voice Auth] User {account_id} not found. Enrolling new voice...")
+        save_user_embedding(db, account_id, embedding.tobytes())
+        CALL_STATE["voice_match_score"] = 1.0 # First time always matches self
+        print(f"[Voice Auth] Enrollment Complete.")
+
+
 # -------------------------------------------------------------
 # MODE 1: FILE PROCESSING (No User Interaction)
 # -------------------------------------------------------------
@@ -106,31 +144,24 @@ def process_file_mode(input_file):
     CALL_STATE.update(details)
     print(f"[Extracted]: OTP={CALL_STATE['otp']}, Name={CALL_STATE['name']}, Intent={CALL_STATE['intent']}")
     
-    # 3. Analyze Audio Risk
+    # 3. Analyze Audio Risk (AI Spoofing)
     analyze_audio_file(input_file)
     
-    # 4. Generate Report
+    # 4. Generate Report setup
     otp_success, identity_fails, _ = validate_identity(CALL_STATE["otp"], CALL_STATE["name"], CALL_STATE["dob"])
     
-    # --- HISTORY CHECK ---
-    from src.database import get_db, get_account_history, save_call_record, init_db
-    from src.history import analyze_history
-    
-    # Ensure DB ready (idempotent)
+    # --- HISTORY & VOICE AUTH CHECK ---
     init_db()
-    
-    # Mock Account ID for file mode (or extract?)
-    # For demo, let's say: "Enter Account ID manually?" or fixed to '12345' if 'fraud' in file?
-    # Let's check sys args or just random default? User said "Prompt for Account ID".
-    # In file mode, interactive prompt might be weird. Let's assume passed via separate arg or just use '12345'
-    # Actually, let's ask user even in file mode if interactive stdin available, else default.
-    account_id = "12345" # Default for demo easier testing
+    account_id = "12345" # Default for demo
     print(f"[System] analyzing history for Account: {account_id}...")
     
     db = next(get_db())
     history = get_account_history(db, account_id)
     mod, explanations = analyze_history(history)
     print(f"[History] Modifier: {mod}, Reasons: {explanations}")
+    
+    # --- VOICE AUTH ---
+    verify_voice_identity(input_file, account_id)
     
     # 5. Risk Calculation
     otp_success, identity_fails, _ = validate_identity(details["otp"], details["name"], details["dob"])
@@ -143,7 +174,8 @@ def process_file_mode(input_file):
         voice_prob=CALL_STATE.get("voice_prob", 0.0),
         history_modifier=mod
     )
-    risk_data["history_explanations"] = explanations # Pass for reporting
+    risk_data["history_explanations"] = explanations
+    risk_data["voice_match_score"] = CALL_STATE["voice_match_score"]
     
     # 6. Save Record
     save_call_record(db, {
@@ -194,17 +226,13 @@ def live_interactive_mode():
     print("[System] Mode: Live Interactive Session")
     speak("Voice Sentinel Secure Line. Please answer the security questions.")
     
-    # --- HISTORY INTEGRATION ---
-    from src.database import get_db, get_account_history, save_call_record, init_db
-    from src.history import analyze_history
-    
+    # --- HISTORY & DB ---
     init_db()
     
     # Ask for Account ID
     speak("Please say your 5 digit Account Number.")
-    # listen_and_transcribe with simple digits extraction
     acc_text = listen_and_transcribe("Please say your account number.")
-    # Extract digits
+    
     import re
     digits = re.findall(r"\d+", acc_text)
     account_id = "".join(digits)
@@ -223,7 +251,7 @@ def live_interactive_mode():
     monitor_thread = threading.Thread(target=periodic_risk_monitor)
     monitor_thread.start()
     
-    # Q&A Loop - Pass audio file path to save/append chunks
+    # Q&A Loop
     session_file = CALL_STATE["audio_file"]
     
     # 1. OTP
@@ -254,10 +282,14 @@ def live_interactive_mode():
     CALL_STATE["finished"] = True
     monitor_thread.join()
     
-    # Final Analysis if not triggered yet
+    # Final Analysis if not triggered yet (AI Spoofing)
     if CALL_STATE["voice_risk"] == "LOW" and CALL_STATE["voice_prob"] == 0.0:
         if get_wav_duration(session_file) > 0.5:
              analyze_audio_file(session_file)
+             
+    # --- VOICE AUTH VERIFICATION ---
+    if get_wav_duration(session_file) > 0.5 and account_id != "UNKNOWN":
+        verify_voice_identity(session_file, account_id)
     
     # Report
     otp_success, identity_fails, _ = validate_identity(CALL_STATE["otp"], CALL_STATE["name"], CALL_STATE["dob"])
@@ -271,6 +303,7 @@ def live_interactive_mode():
         history_modifier=mod
     )
     risk_data["history_explanations"] = explanations
+    risk_data["voice_match_score"] = CALL_STATE["voice_match_score"]
     
     # SAVE History
     save_call_record(db, {
@@ -313,19 +346,9 @@ def main():
             print("File not found.")
             return
         
-        # Mock Hack: If fraud flag or specific filename, ensure mock features expects it
-        # But analyze_audio_file handles that check based on path.
-        # If user passed --audio-input ai_audio.wav, we use that.
         process_file_mode(args.audio_input)
         
     else:
-        # Live Mode
-        # If --fraud is passed here, we might want to inject fraud audio into the accumulation? 
-        # But user asked for "accumulate answers".
-        # We'll just run standard live accumulation.
-        # If simulation environment has no mic, it falls back to text, 
-        # and no audio is appended (duration=0).
-        # We should handle duration=0 case by defaulting to Low Risk (or copying legit.wav if needed).
         live_interactive_mode()
 
 if __name__ == "__main__":

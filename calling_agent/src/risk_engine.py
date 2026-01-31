@@ -1,4 +1,4 @@
-def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0.0, history_modifier=0):
+def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0.0, history_modifier=0, country_mismatch=False):
     """
     Aggregates risk signals into a final percentage score based on user-defined weights.
     
@@ -7,10 +7,11 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     - Personal Data: 2 (Add if Failed)
     - Voice Analysis: 2 (Add * prob_ai)
     - Intent: Weight 1-4
+    - Country Mismatch: 2 (Add if True)
     - History Modifier: -1 (Safe), 0 (Neutral), +1 (Risky)
       -> Adjusts final level, NOT just raw score.
     
-    Total Max Score = 9.
+    Total Max Score = 11.
     """
     
     # Intialize Score
@@ -48,9 +49,16 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     intent_val = intent_scores.get(intent, 2.0)
     current_score += intent_val
     details["intent_score"] = intent_val
+
+    # 5. Country Mismatch (Weight 2)
+    if country_mismatch:
+        current_score += 2.0
+        details["country_score"] = 2.0
+    else:
+        details["country_score"] = 0.0
     
     # Calculate Percentage
-    max_score = 9.0
+    max_score = 11.0 # Updated from 9
     risk_percentage = (current_score / max_score) * 100.0
     
     # Determine Initial Risk Label
@@ -61,7 +69,7 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     else:
         base_label = "LOW"
         
-    # 5. Apply History Modifier
+    # 6. Apply History Modifier
     # Rules: History moves risk by at most 1 level.
     # History [-1, 0, 1]
     levels = ["LOW", "MEDIUM", "HIGH"]
@@ -91,6 +99,7 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
             "identity_fails": identity_fails,
             "voice_risk": voice_risk,
             "voice_prob": voice_prob,
-            "intent": intent
+            "intent": intent,
+            "country_mismatch": country_mismatch
         }
     }
