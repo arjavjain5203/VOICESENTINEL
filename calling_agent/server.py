@@ -107,6 +107,12 @@ def analysis_thread(session_id):
             transcript = transcribe_audio(accumulated_path, "UNKNOWN")
             session['transcript'] = transcript
             print(f"[Analysis] Transcript: {transcript}")
+
+            # PLAYBACK ON SERVER (So Agent hears the User)
+            try:
+                subprocess.run(["aplay", "-q", accumulated_path], check=False)
+            except Exception as e:
+                print(f"[Playback Error] Could not play audio: {e}")
         
             # 2. Extract Details
             # We update the session's details incrementally
@@ -162,6 +168,7 @@ def analysis_thread(session_id):
              print(f"[Analysis] Voice Auth Error: {e}")
 
     session['analyzed'] = True
+    session['analyzing'] = False
     print(f"[Analysis] Finished for {session_id}")
 
 @app.route('/health', methods=['GET'])
@@ -246,7 +253,12 @@ def submit_response():
     # Trigger analysis in background if not already running heavily?
     # For now, trigger every time to keep state updated.
     
-    threading.Thread(target=analysis_thread, args=(session_id,)).start()
+    # Prevent Duplicate Analysis
+    if session.get('analyzing'):
+        print(f"[Analysis] Skipped: Session {session_id} is busy.")
+    else:
+        session['analyzing'] = True
+        threading.Thread(target=analysis_thread, args=(session_id,)).start()
     
     # Move to next step
     current_index = session['step_index']
@@ -419,6 +431,13 @@ def submit_response():
         except Exception as e:
             print(f"[Cleanup Warning] {e}")
         
+        # Sanitize risk_data for JSON
+        for k, v in risk_data.items():
+            if hasattr(v, 'item'):
+                 risk_data[k] = v.item()
+            elif isinstance(v, (np.float32, np.float64)):
+                 risk_data[k] = float(v)
+
         return jsonify({
             "status": "completed",
             "report": risk_data
@@ -428,6 +447,65 @@ def submit_response():
 def serve_audio(filename):
     return send_from_directory('ivr_audio', filename)
 
+# --- Real-Time Agent Communication ---
+
+AGENT_OUTBOX = {} # Stores pending audio URL for session: {ssid: url}
+AGENT_AUDIO_DIR = os.path.join(os.getcwd(), 'agent_audio')
+os.makedirs(AGENT_AUDIO_DIR, exist_ok=True)
+
+@app.route('/agent/audio/<path:filename>')
+def serve_agent_audio(filename):
+    return send_from_directory('agent_audio', filename)
+
+import subprocess
+
+# --- Agent Dashboard Routes ---
+
+@app.route('/dashboard')
+def dashboard():
+    return send_from_directory('templates', 'dashboard.html')
+
+@app.route('/agent/speak', methods=['POST'])
+def agent_speak():
+    """
+    Agent uploads audio to talk to client.
+    """
+    try:
+        session_id = request.form.get('session_id')
+        if not session_id:
+            return jsonify({"error": "No session_id"}), 400
+            
+        if 'file' not in request.files:
+            return jsonify({"error": "No file"}), 400
+            
+        file = request.files['file']
+        filename = f"agent_{uuid.uuid4().hex}.wav"
+        save_path = os.path.join(AGENT_AUDIO_DIR, filename)
+        file.save(save_path)
+        
+        # Queue it (Store filename only)
+        AGENT_OUTBOX[session_id] = filename
+        print(f"[{session_id}] Agent Message Queued: {filename}")
+        
+        # Return URL for the sender (Agent) just for confirmation
+        return jsonify({"status": "sent", "url": f"/agent/audio/{filename}"})
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/client/poll_agent/<session_id>', methods=['GET'])
+def poll_agent(session_id):
+    """
+    Client polls this to see if Agent is speaking.
+    """
+    if session_id in AGENT_OUTBOX:
+        filename = AGENT_OUTBOX.pop(session_id) 
+        # Construct URL relative to the Client's view (request.host_url)
+        full_url = f"{request.host_url}agent/audio/{filename}"
+        return jsonify({"has_audio": True, "audio_url": full_url})
+    else:
+        return jsonify({"has_audio": False})
+
 if __name__ == '__main__':
     # Init DB
     try:
@@ -435,13 +513,25 @@ if __name__ == '__main__':
     except:
         pass
     # To allow access over Wi-Fi, we must bind to 0.0.0.0
+    
+    # Suppress heavy polling logs
+    import logging
+    log = logging.getLogger('werkzeug')
+    # Custom filter to mute polling logs
+    class PollFilter(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            if "/client/poll_agent/" in msg and " 200 " in msg: return False
+            if "/client/wait_for_agent/" in msg and " 404 " in msg: return False
+            return True
+            
+    log.addFilter(PollFilter())
+    
     app.run(host='0.0.0.0', port=5001, debug=True)
 
 # --- Agent Dashboard Routes ---
 
-@app.route('/dashboard')
-def dashboard():
-    return send_from_directory('templates', 'dashboard.html')
+
 
 @app.route('/agent/api/sessions')
 def get_sessions():
@@ -472,52 +562,3 @@ def get_sessions():
             "report_json": None # placeholder
         })
     return jsonify(session_list)
-
-# --- Real-Time Handover Relay ---
-
-agent_audio_buffer = {} # session_id -> list of audio files (FIFO)
-
-@app.route('/agent/speak', methods=['POST'])
-def agent_speak():
-    """
-    Agent uploading voice to be sent to user.
-    """
-    if 'file' not in request.files:
-        return jsonify({"error": "No file"}), 400
-        
-    file = request.files['file']
-    session_id = request.form.get('session_id')
-    
-    if not session_id:
-        return jsonify({"error": "No session_id"}), 400
-        
-    # Save temp file
-    filename = f"agent_msg_{session_id}_{int(time.time())}.wav"
-    filepath = os.path.join("ivr_audio", filename)
-    file.save(filepath)
-    
-    # Add to buffer
-    if session_id not in agent_audio_buffer:
-        agent_audio_buffer[session_id] = []
-    agent_audio_buffer[session_id].append(filename)
-    
-    return jsonify({"status": "queued", "file": filename})
-
-@app.route('/client/poll_agent/<session_id>', methods=['GET'])
-def poll_agent_audio(session_id):
-    """
-    Client polls this to see if Agent has spoken.
-    """
-    if session_id in agent_audio_buffer and agent_audio_buffer[session_id]:
-        # Pop the oldest message
-        filename = agent_audio_buffer[session_id].pop(0)
-        return jsonify({
-            "has_audio": True,
-            "audio_url": f"/ivr_audio/{filename}" # We need to serve this path
-        })
-    else:
-        return jsonify({"has_audio": False})
-
-@app.route('/ivr_audio/<path:filename>')
-def serve_agent_audio(filename):
-    return send_from_directory('ivr_audio', filename)

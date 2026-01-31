@@ -239,13 +239,14 @@ def main():
     def polling_loop():
         while True:
             try:
-                poll_resp = requests.get(f"{SERVER_URL}/client/poll_agent/{SESSION_ID}")
+                poll_resp = requests.get(f"{SERVER_URL}/client/poll_agent/{SESSION_ID}", timeout=2) # Add timeout
                 if poll_resp.status_code == 200:
                     poll_data = poll_resp.json()
                     if poll_data.get('has_audio'):
                         print("\n[Agent] Speaking...")
                         play_audio_from_url(poll_data['audio_url'])
                         print("\n[You] Press Enter to Reply >> ", end="", flush=True)
+                # Fail silently on 404 or connection errors during polling to keep UI clean
             except:
                 pass
             time.sleep(1.5)
