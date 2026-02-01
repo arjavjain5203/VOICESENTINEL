@@ -1,111 +1,102 @@
-import pyaudio
-import wave
-import sys
 import os
+import sys
+import uuid
 import datetime
-import hashlib
-from src.database import save_verification_record
+import subprocess
+import numpy as np
+
+# Adjust path to find src
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from src.voice_auth import VoiceAuthenticator
+from src.database import save_verification_record, add_linked_account
 
-def record_audio(filename, duration=5):
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 16000 # Resemblyzer prefers 16k
+def enroll_user(phone_number, user_id):
+    print(f"\n🎙️  Starting Manual Voice Enrollment for {phone_number} (ID: {user_id})")
+    print("---------------------------------------------------------------")
     
-    p = pyaudio.PyAudio()
-    
-    print(f"\n🎤 Recording for {duration} seconds... Speak naturally!")
-    
-    stream = p.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    input=True,
-                    frames_per_buffer=CHUNK)
-    
-    frames = []
-    
-    for i in range(0, int(RATE / CHUNK * duration)):
-        data = stream.read(CHUNK)
-        frames.append(data)
-        
-    print("✅ Recording Finished.")
-    
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-    
-    with wave.open(filename, 'wb') as wf:
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(p.get_sample_size(FORMAT))
-        wf.setframerate(RATE)
-        wf.writeframes(b''.join(frames))
-
-def main():
-    print("=== MANUAL USER ENROLLMENT ===")
-    
-    # 1. Gather Details
-    phone = input("Phone (+Code Number) [Default: +91 9310082225]: ").strip() or "+91 9310082225"
-    account_id = input("Account ID [Default: 123456789]: ").strip() or "123456789"
-    name = input("Name [Default: mukesh]: ").strip() or "mukesh"
-    dob = input("DOB [Default: 15-07-2005]: ").strip() or "15-07-2005"
-    
-    # 2. Record Voice
-    audio_file = "temp_enrollment.wav"
-    input("\nPress Enter to start recording voice sample... ")
-    record_audio(audio_file, duration=5)
-    
-    # 3. Process Audio (Extract Embedding)
+    # 1. Record Audio
+    filename = "enrollment_temp.wav"
     try:
-        print("⚙️ Processing Voice Embedding...")
-        auth = VoiceAuthenticator()
-        emb = auth.extract_embedding_from_file(audio_file)
-        
-        if emb is None:
-            print("❌ Failed to extract vocal features. Try again.")
-            return
+        if os.path.exists(filename):
+            os.remove(filename)
             
-        # Read bytes for storage
-        with open(audio_file, "rb") as f:
-            audio_bytes = f.read()
-            
+        print("🔴 RECORDING for 8 seconds... SPEAK NOW! (Say: 'My voice is my password')")
+        # Use arecord (16kHz, Mono, Signed 16bit)
+        subprocess.run(
+            ["arecord", "-d", "8", "-f", "S16_LE", "-r", "16000", "-c", "1", filename], 
+            check=True
+        )
+        print("✅ Recording Complete.")
     except Exception as e:
-        print(f"❌ Audio Processing Error: {e}")
+        print(f"❌ Recording failed: {e}")
         return
 
-    # 4. Save to DB (Verified Status)
-    verification_data = {
-        "call_id": f"MANUAL_ENROLL_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-        "phone_number": phone,
-        "country_code": "IN", # Approx
-        "is_first_time_caller": True, # This creates the baseline
-        "otp_sent": False,
-        "otp_verified": True, # MANUALLY VERIFIED
-        "otp_attempts": 0,
-        "personal_details": {
-            "name": name,
-            "dob": dob,
-            "intent": "Manual Enrollment"
-        },
-        "personal_details_verified": True,
-        "audio_bytes": audio_bytes,
-        "audio_duration": 5.0,
-        "ai_audio_probability": 0.0,
-        "is_ai_generated_audio": False,
-        "voice_match_score": 1.0, # Self match
-        "voice_embedding_bytes": emb.tobytes(), # Save explicit embedding for faster lookup
-        "fraud_risk_score": 0,
-        "verification_status": "VERIFIED"
-    }
-    
-    print("\n💾 Saving to MongoDB...", end=" ")
-    save_verification_record(verification_data)
-    print("DONE!")
-    
-    # Cleanup
-    os.remove(audio_file)
-    print(f"\n✅ User {name} ({phone}) enrolled successfully.")
-    print("Next call from this number should show 'MATCHED'.")
+    # 2. Generate Embedding
+    try:
+        print("⚙️  Generating Voice Embedding...")
+        auth = VoiceAuthenticator()
+        embedding = auth.extract_embedding_from_file(filename)
+        
+        if embedding is None:
+            print("❌ Failed to extract embedding. Audio might be silent.")
+            return
+            
+        print("✅ Embedding generated successfully.")
+    except Exception as e:
+        print(f"❌ Voice Auth Error: {e}")
+        return
+
+    # 3. Save to Database
+    try:
+        print("💾 Saving to Database...")
+        with open(filename, "rb") as f:
+            audio_bytes = f.read()
+            
+        call_id = str(uuid.uuid4())
+        
+        data = {
+            "call_id": call_id,
+            "user_id": user_id,
+            "phone_number": phone_number,
+            "country_code": "IN",
+            "otp_sent": True,
+            "otp_verified": True,
+            "otp_attempts": 1,
+            "personal_details": {"name": "Manual Enroll", "intent": "ENROLLMENT"},
+            "personal_details_verified": True,
+            "audio_bytes": audio_bytes,
+            "audio_duration": 8.0,
+            "ai_audio_probability": 0.0,
+            "voice_match_score": 1.0, # Baseline
+            "matched_call_id": None,
+            "voice_embedding_bytes": embedding.tobytes(),
+            "fraud_risk_score": 0,
+            "phone_trust_score": 50, # Reset to neutral
+            "user_id_trust_score": 50,
+            "verification_status": "VERIFIED"
+        }
+        
+        doc = save_verification_record(data)
+        
+        # Link account
+        add_linked_account(phone_number, user_id)
+        
+        print(f"✅ Enrollment Successful! Record ID: {doc.get('audio_file_id')}")
+        print("---------------------------------------------------------------")
+        
+        # Cleanup
+        os.remove(filename)
+        
+    except Exception as e:
+        print(f"❌ Database Error: {e}")
 
 if __name__ == "__main__":
-    main()
+    target_phone = "+9310082225"
+    target_uid = "123456789"
+    
+    if len(sys.argv) > 2:
+        target_phone = sys.argv[1]
+        target_uid = sys.argv[2]
+        
+    enroll_user(target_phone, target_uid)

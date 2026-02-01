@@ -40,8 +40,14 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     # Scale proportional to AI probability
     # If 100% AI, adds 35 points.
     voice_contribution = voice_prob * 35.0
+    
+    # [Boosting] If AI Prob > 0.5 (Fake), ensure it hits hard.
+    if voice_prob > 0.5:
+        voice_contribution += 15.0 # Bonus penalty to push into Medium/High
+        
     current_score += voice_contribution
     details["voice_score"] = voice_contribution
+    print(f"[RiskEngine] AI Prob: {voice_prob} -> Score: {voice_contribution}")
 
     # 3b. Voice Match (Weight 15 - HIGH IMPORTANCE) - EQUAL TO AI
     # Match 1.0 -> Risk 0
@@ -49,6 +55,7 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     voice_match_risk = (1.0 - voice_match_score) * 15.0
     current_score += voice_match_risk
     details["match_score"] = voice_match_risk
+    print(f"[RiskEngine] Match Score: {voice_match_score} -> Risk: {voice_match_risk}")
     
     # 4. Intent Scoring (Weight 1-4)
     intent_scores = {

@@ -347,6 +347,7 @@ def submit_response():
             voice_risk="HIGH" if session['voice_prob'] > 0.5 else "LOW",
             intent=details['intent'],
             voice_prob=session['voice_prob'],
+            voice_match_score=session.get('voice_match_score', 1.0), # Pass Match Score!
             history_modifier=mod,
             country_mismatch=session['country_mismatch'],
             name_stability=name_score,
