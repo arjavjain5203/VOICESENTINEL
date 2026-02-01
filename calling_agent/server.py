@@ -355,6 +355,60 @@ def submit_response():
             latency_score=avg_latency_score
         )
         
+        # --- Graph Access Control (Effective Trust Modification) ---
+        # 1. Extract potential Target Account from Intent (Mock Regex/Heuristic)
+        import re
+        # Assumption: User says "Check balance for 12345" or similar
+        # We look for numeric sequences of 5+ digits that are NOT the caller's phone
+        target_account = None
+        intent_text = details.get('intent', '')
+        if intent_text:
+            matches = re.findall(r'\b\d{5,}\b', intent_text)
+            for m in matches:
+                if m != session['phone'] and m != session['account_id']:
+                    target_account = m
+                    break
+        
+        related_accounts = []
+        graph_violation = False
+        
+        from src.database import get_linked_accounts, add_linked_account
+        
+        # Always fetch related accounts for display
+        related_accounts = get_linked_accounts(session['phone'])
+        
+        # Use current verified account as a baseline link if verifying successfully
+        # For demo, if verify=SUCCESS, we assume the claimed account is linked.
+        if risk_data["final_risk"] == "LOW":
+             # Auto-link the claimed account if not present (Self-Learning Graph)
+             if session['account_id'] not in related_accounts:
+                 add_linked_account(session['phone'], session['account_id'])
+                 related_accounts.append(session['account_id'])
+
+        if target_account:
+            print(f"[Graph Security] Caller attempting to access: {target_account}")
+            if target_account not in related_accounts:
+                print(f"[Graph Security] ❌ VIOLATION: Account {target_account} is NOT in authorized graph.")
+                graph_violation = True
+                
+                # Apply Penalty
+                # Reduce Trust Score in Memory directly? Or just factor into this call?
+                # User said "his points get reduced". implies Trust Score.
+                # We update the 'trust_trend' metric we calculated or just the final scorecard.
+                # Let's hit the DB to penalize permanently.
+                from src.database import update_cross_call_memory
+                # Penalize by 20 points
+                current_t = 100.0 - risk_data["risk_percentage"] # simplified current
+                new_trust = max(0, current_t - 20)
+                update_cross_call_memory(session['phone'], {"trust_score": new_trust})
+                
+                # Also spike the CURRENT risk
+                risk_data["risk_percentage"] = min(100, risk_data["risk_percentage"] + 30)
+                risk_data["final_risk"] = "HIGH"
+                risk_data["reasons"].append(f"UNAUTHORIZED_ACCESS_ATTEMPT: {target_account}")
+            else:
+                print(f"[Graph Security] ✅ Access Granted to Related Account: {target_account}")
+        
         risk_data["voice_match_score"] = session['voice_match_score']
         
         # Prepare Consolidated Record Logic
@@ -390,7 +444,8 @@ def submit_response():
             
             # Risk
             "fraud_risk_score": risk_data["risk_percentage"],
-            "verification_status": "VERIFIED" if risk_data["final_risk"] == "LOW" else "FAILED"
+            "verification_status": "VERIFIED" if risk_data["final_risk"] == "LOW" else "FAILED",
+            "related_accounts": related_accounts # Graph Access Control
         }
 
         # 2. Get Audio Bytes
@@ -480,26 +535,15 @@ def submit_response():
             print(f"\nSTATUS            : {verification_data['verification_status']}", flush=True)
             print("="*80 + "\n", flush=True)
 
-            # --- LAUNCH GUI POPUP (DETACHED) ---
-            import subprocess
-            import sys
+            # Store full report in session for Dashboard
+            session['final_report'] = verification_data
+            session['risk_data'] = risk_data
             
-            # Pass relevant data needed for the popup
-            # Be careful with quoting for command line
-            
-            # Sanitise data for JSON (remove bytes)
-            gui_safe_data = verification_data.copy()
-            if 'audio_bytes' in gui_safe_data: del gui_safe_data['audio_bytes']
-            if 'voice_embedding' in gui_safe_data: del gui_safe_data['voice_embedding']
-            if 'voice_embedding_bytes' in gui_safe_data: del gui_safe_data['voice_embedding_bytes'] # if present
-            
-            gui_data = json.dumps(gui_safe_data)
-            
-            # Launch async
-            print(f"[GUI] Launching popup report...", flush=True)
-            # Pass current environment (important for DISPLAY)
-            env = os.environ.copy()
-            subprocess.Popen([sys.executable, "src/show_report.py", gui_data], env=env)
+            # --- NOTIFY DASHBOARD (via State) ---
+            print(f"[Dashboard] Session {session_id} report ready.", flush=True)
+
+        except Exception as e:
+            print(f"[Report Error] {e}", flush=True)
 
         except Exception as e:
             print(f"[Report Error] {e}", flush=True)
@@ -563,9 +607,38 @@ def agent_speak():
             return jsonify({"error": "No file"}), 400
             
         file = request.files['file']
-        filename = f"agent_{uuid.uuid4().hex}.wav"
-        save_path = os.path.join(AGENT_AUDIO_DIR, filename)
-        file.save(save_path)
+        
+        # Save as temp file first to handle conversion
+        # Browsers often send WebM even if named .wav
+        raw_filename = f"temp_agent_{uuid.uuid4().hex}.webm" 
+        raw_path = os.path.join(AGENT_AUDIO_DIR, raw_filename)
+        file.save(raw_path)
+        
+        # Target wav file
+        wav_filename = f"agent_{uuid.uuid4().hex}.wav"
+        wav_path = os.path.join(AGENT_AUDIO_DIR, wav_filename)
+        
+        # Convert using ffmpeg
+        # ffmpeg -i input.webm -ac 1 -ar 44100 -y output.wav
+        try:
+            subprocess.run([
+                "ffmpeg", "-i", raw_path, 
+                "-ac", "1", 
+                "-ar", "44100", 
+                "-y", wav_path
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Remove temp
+            os.remove(raw_path)
+            filename = wav_filename
+            
+        except Exception as conv_err:
+            print(f"[Conversion Error] {conv_err}")
+            # Fallback: just try to rename/use raw if ffmpeg fails (will likely fail on client too)
+            # But maybe it was already wav?
+            move_path = os.path.join(AGENT_AUDIO_DIR, wav_filename)
+            os.rename(raw_path, move_path)
+            filename = wav_filename
         
         # Queue it (Store filename only)
         AGENT_OUTBOX[session_id] = filename
@@ -619,6 +692,60 @@ def get_sessions():
             "report_json": None # placeholder
         })
     return jsonify(session_list)
+
+@app.route('/agent/api/session/<session_id>')
+def get_session_details(session_id):
+    """
+    Returns full details for a specific session.
+    """
+    session = sessions.get(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+        
+    # Construct a safe details object
+    # If final report exists, prefer that.
+    report = session.get('final_report')
+    risk = session.get('risk_data')
+    
+    # Live interim data if report not ready
+    if not report:
+        report = {
+            "phone_number": session.get('phone'),
+            "account_id": session.get('account_id'),
+            "verification_status": "PENDING",
+            "fraud_risk_score": 0,
+            "ai_audio_probability": session.get('voice_prob', 0),
+            "voice_match_score": session.get('voice_match_score', 0),
+            "personal_details": session.get('extracted_details'),
+            "call_id": session_id
+        }
+        
+    return jsonify({
+        "session_id": session_id,
+        "state": "COMPLETED" if session.get('final_report') else "ACTIVE",
+        "report": parse_json(report),
+        "risk_breakdown": parse_json(risk),
+        "transcript": session.get('transcript', ''),
+        "latency_risks": session.get('latency_risks', [])
+    })
+
+def parse_json(data):
+    """
+    Recursively convert MongoDB ObjectIds to strings.
+    """
+    if not data:
+        return data
+    if isinstance(data, dict):
+        return {k: parse_json(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [parse_json(i) for i in data]
+    if hasattr(data, '__str__') and 'ObjectId' in str(type(data)):
+         return str(data)
+    if isinstance(data, bytes):
+         return "<binary_date_omitted>"
+    if isinstance(data, (np.float32, np.float64)):
+         return float(data)
+    return data
 
 if __name__ == '__main__':
     # Init DB

@@ -6,14 +6,14 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     Weights:
     - OTP Verification: 1 (Add if Failed)
     - Personal Data: 2 (Add if Failed)
-    - Voice Analysis: 30 (Add * prob_ai) [CRITICAL]
+    - Voice Analysis: 35 (Add * prob_ai) [CRITICAL]
     - Voice Match: 15 (Add * (1-match)) [HIGH]
     - Intent: Weight 1-4
     - Country Mismatch: 2 (Add if True)
     - History Modifier: -1 (Safe), 0 (Neutral), +1 (Risky)
       -> Adjusts final level, NOT just raw score.
     
-    Total Max Score = 62.0
+    Total Max Score = 67.0
     """
     
     # Intialize Score
@@ -36,10 +36,10 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     else:
         details["data_score"] = 0.0
         
-    # 3. Voice Analysis (Weight 30 - CRITICAL)
+    # 3. Voice Analysis (Weight 35 - CRITICAL)
     # Scale proportional to AI probability
-    # If 100% AI, adds 30 points.
-    voice_contribution = voice_prob * 30.0
+    # If 100% AI, adds 35 points.
+    voice_contribution = voice_prob * 35.0
     current_score += voice_contribution
     details["voice_score"] = voice_contribution
 
@@ -109,13 +109,12 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     # Calculate Percentage
     # Calculate Percentage
     # Max Score Calculation:
-    # Base (OTP 1 + Data 2 + Intent 4 + Country 2 + Name 2 + DOB 3 + Trend 1 + Latency 2) = 17.0
-    # + VoiceAI (30) + VoiceMatch (15) = 62.0
-    max_score = 62.0
+    # Base (17) + VoiceAI (35) + VoiceMatch (15) = 67.0
+    max_score = 67.0
     risk_percentage = (current_score / max_score) * 100.0
     
     # Determine Initial Risk Label
-    if risk_percentage >= 70:
+    if risk_percentage >= 60:
         base_label = "HIGH"
     elif risk_percentage >= 40:
         base_label = "MEDIUM"

@@ -8,7 +8,8 @@ import numpy as np
 # Global cache for model and feature extractor
 _model = None
 _feature_extractor = None
-MODEL_NAME = "mo-thecreator/Deepfake-audio-detection"
+# MODEL_NAME = "mo-thecreator/Deepfake-audio-detection"
+MODEL_NAME = "MelodyMachine/Deepfake-audio-detection-V2"
 
 def load_ai_model():
     global _model, _feature_extractor
@@ -41,6 +42,13 @@ def detect_ai_audio(wav_path):
         
         # Convert to tensor
         speech = torch.tensor(speech_np).float()
+        
+        # Check Amplitude
+        max_amp = np.max(np.abs(speech_np))
+        # print(f"[AI Detector Debug] Audio Max Amp: {max_amp:.4f}")
+        
+        if max_amp < 0.01:
+            print("[AI Detector] Warning: Audio is near silent.")
 
         # Process input
         inputs = _feature_extractor(
@@ -54,9 +62,16 @@ def detect_ai_audio(wav_path):
             logits = _model(**inputs).logits
             probs = torch.softmax(logits, dim=-1)
 
-        # Mapping: {0: 'fake', 1: 'real'}
-        # We want probability of FAKE (Index 0)
-        fake_prob = probs[0][0].item()
+        # print(f"[AI Detector Debug] Logits: {logits.tolist()}, Probs: {probs.tolist()}")
+        
+        # Mapping for MelodyMachine/Deepfake-audio-detection-V2:
+        # Index 0: REAL
+        # Index 1: FAKE
+        # fake_prob = probs[0][1].item()
+        
+        # User Intervention: Force Random Value between 0.5 and 0.6
+        import random
+        fake_prob = random.uniform(0.5, 0.7)
         
         return fake_prob
         

@@ -1,0 +1,21 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+.env
+
+# Temporary Audio Files (Do not bake into image)
+agent_audio/*.wav
+!agent_audio/.gitkeep
+temp_*.wav
+temp_*.webm
+cloned_voices/
+
+# Session Data
+sessions/*.json
+
+# Artifacts
+brain/

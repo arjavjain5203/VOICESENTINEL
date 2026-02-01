@@ -228,3 +228,24 @@ def update_cross_call_memory(phone_number, data_update):
             update_query,
             upsert=True
         )
+
+def get_linked_accounts(phone_number):
+    """
+    Returns list of linked 'account_id' strings for a phone number.
+    Returns empty list if none found.
+    """
+    mem = get_cross_call_memory(phone_number)
+    if mem and 'linked_accounts' in mem:
+        return mem['linked_accounts']
+    return []
+
+def add_linked_account(phone_number, account_id):
+    """
+    Adds an account_id to the authorized graph for this phone number.
+    """
+    db = get_db_connection()
+    db[MEMORY_COLLECTION_NAME].update_one(
+        {"phone_number": phone_number},
+        {"$addToSet": {"linked_accounts": account_id}},
+        upsert=True
+    )

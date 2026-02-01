@@ -235,52 +235,67 @@ def main():
     print("To Speak: Press Enter at any time.")
     print("="*40 + "\n")
     
-    # Start Polling Thread
-    def polling_loop():
-        while True:
-            try:
-                poll_resp = requests.get(f"{SERVER_URL}/client/poll_agent/{SESSION_ID}", timeout=2) # Add timeout
-                if poll_resp.status_code == 200:
-                    poll_data = poll_resp.json()
-                    if poll_data.get('has_audio'):
-                        print("\n[Agent] Speaking...")
-                        play_audio_from_url(poll_data['audio_url'])
-                        print("\n[You] Press Enter to Reply >> ", end="", flush=True)
-                # Fail silently on 404 or connection errors during polling to keep UI clean
-            except:
-                pass
-            time.sleep(1.5)
-
-    poll_thread = threading.Thread(target=polling_loop, daemon=True)
-    poll_thread.start()
-
-    # Main Input Loop for User Reply
+    # --- Strict Turn-Taking Handover ---
+    print("\n" + "="*40)
+    print("📞 CONNECTED TO HUMAN AGENT")
+    print("Sequential Mode: Wait for Agent -> Play -> Reply")
+    print("="*40 + "\n")
+    
     while True:
         try:
-            input("[You] Press Enter to Reply >> ")
+            # 1. Wait for Agent Audio
+            print("[Client] Waiting for Agent to speak...", end="\r")
+            agent_audio_url = None
+            
+            # Poll loop
+            while not agent_audio_url:
+                try:
+                    p_resp = requests.get(f"{SERVER_URL}/client/poll_agent/{SESSION_ID}", timeout=5)
+                    if p_resp.status_code == 200:
+                        p_data = p_resp.json()
+                        if p_data.get('has_audio'):
+                            agent_audio_url = p_data['audio_url']
+                            print(f"\n[Agent] Message Received!")
+                    time.sleep(1)
+                except KeyboardInterrupt:
+                    raise
+                except:
+                    time.sleep(1)
+            
+            # 2. Play Agent Audio
+            play_audio_from_url(agent_audio_url)
+            
+            # 3. Prompt User to Reply
+            print("\n[Your Turn]")
+            input("Press Enter to Start Recording >> ")
+            
+            # 4. Record
             record_file = "client_handover_response.wav"
             record_audio(record_file, duration=5)
             
-            # For now, we don't really have an 'agent listen' endpoint other than submit-response
-            # But submit-response expects IVR flow. We might need a generic /client/speak endpoint too?
-            # Or just reuse submit-response and ignore the IVR logic if completed?
-            # Server side: If status is completed, just log/ignore or append to history.
-            
-            # Let's send to submit-response, server handles it implicitly or we ignore result.
+            # 5. Send
+            print("[Client] Sending Reply...")
             with open(record_file, "rb") as f:
                 files = {'file': f}
                 payload = {'session_id': SESSION_ID}
-                requests.post(f"{SERVER_URL}/submit-response", files=files, data=payload)
-            print("[Sent]")
+                resp = requests.post(f"{SERVER_URL}/submit-response", files=files, data=payload)
+                
+            if resp.status_code == 200:
+                print("[Sent] Message delivered.")
+            elif resp.status_code == 404:
+                print("❌ Session Expired (Server Restarted). Please restart this client script.")
+                break
+            else:
+                print(f"❌ Send Failed: {resp.status_code} - {resp.text}")
             
             # Cleanup
             try:
                 os.remove(record_file)
             except:
                 pass
-            
+                
         except KeyboardInterrupt:
-            print("Call Ended.")
+            print("\nCall Ended.")
             break
 
 if __name__ == "__main__":

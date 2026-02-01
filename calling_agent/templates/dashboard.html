@@ -4,457 +4,538 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Sentinel | Agent Dashboard</title>
+    <title>VoiceSentinel | Agent Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
 
         body {
-            font-family: 'Outfit', sans-serif;
-            background-color: #f3f4f6;
+            font-family: 'Inter', sans-serif;
         }
 
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
-        }
-
-        .status-badge-high {
-            background-color: #fee2e2;
-            color: #991b1b;
-        }
-
-        .status-badge-medium {
-            background-color: #ffedd5;
-            color: #9a3412;
-        }
-
-        .status-badge-low {
-            background-color: #dcfce7;
-            color: #166534;
-        }
-
-        /* Pulse animation for active recording */
-        @keyframes pulse-ring {
-            0% {
-                transform: scale(0.33);
-            }
-
-            80%,
-            100% {
-                opacity: 0;
-            }
-        }
-
-        .recording-pulse {
-            position: relative;
-        }
-
-        .recording-pulse::before {
-            content: '';
-            position: absolute;
-            left: -10px;
-            top: -10px;
-            right: -10px;
-            bottom: -10px;
-            border: 2px solid #ef4444;
-            border-radius: 50%;
-            animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        .risk-gauge {
+            transition: width 0.5s ease-out;
         }
     </style>
 </head>
 
-<body class="text-gray-800 h-screen flex flex-col overflow-hidden">
+<body class="bg-gray-900 text-white h-screen flex overflow-hidden">
 
-    <!-- Navbar -->
-    <nav class="bg-white border-b border-gray-200 h-16 flex-none z-20">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="bg-indigo-600 text-white p-2 rounded-lg">
-                    <i data-lucide="shield-check" class="w-6 h-6"></i>
-                </div>
-                <h1
-                    class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
-                    Voice Sentinel <span class="text-gray-400 font-medium text-sm ml-2">Agent Console</span>
-                </h1>
+    <!-- Sidebar: Active Sessions -->
+    <aside class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
+        <div class="p-4 border-b border-gray-700 flex items-center gap-2">
+            <i data-lucide="shield-alert" class="text-indigo-400"></i>
+            <h1 class="text-xl font-bold tracking-tight">VoiceSentinel</h1>
+        </div>
+
+        <div class="p-2 overflow-y-auto flex-1" id="session-list">
+            <!-- Session Items Injected Here -->
+            <div class="text-gray-500 text-sm p-4 text-center">Waiting for calls...</div>
+        </div>
+
+        <div class="p-4 border-t border-gray-700 text-xs text-center text-gray-500">
+            System Status: <span class="text-green-400">Online</span>
+        </div>
+    </aside>
+
+    <!-- Main Content: Detailed Report -->
+    <main class="flex-1 flex flex-col relative">
+        <!-- Header -->
+        <header class="h-16 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-8">
+            <div id="header-info">
+                <h2 class="text-lg font-semibold text-gray-200">Session Analysis</h2>
+                <p class="text-xs text-gray-400" id="header-sub">Select a session to view details</p>
             </div>
             <div class="flex items-center gap-4">
-                <span
-                    class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    <span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                    System Online
-                </span>
-                <div
-                    class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
-                    A
-                </div>
+                <div class="px-3 py-1 bg-gray-700 rounded text-xs font-mono" id="connection-status">Connecting...</div>
             </div>
-        </div>
-    </nav>
+        </header>
 
-    <!-- Main Content -->
-    <main class="flex-1 flex overflow-hidden">
+        <!-- Report Content -->
+        <div id="report-container" class="flex-1 p-8 overflow-y-auto hidden">
 
-        <!-- Sidebar / Session List -->
-        <div class="w-96 bg-white border-r border-gray-200 flex flex-col z-10">
-            <div class="p-4 border-b border-gray-100 bg-gray-50">
-                <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Active Sessions</h2>
-                <div class="relative">
-                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
-                    <input type="text" placeholder="Filter by Phone..."
-                        class="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
-                </div>
-            </div>
+            <!-- View: LIVE MODE (Transcript Only) -->
+            <div id="view-live" class="flex-1 flex flex-col hidden">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 flex flex-col flex-1">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-gray-400 text-sm font-medium uppercase tracking-wider flex items-center gap-2">
+                            <i data-lucide="mic-2" class="w-4 h-4 text-green-400 animate-pulse"></i> Live Conversation
+                        </h3>
+                        <span class="text-xs bg-gray-700 px-2 py-1 rounded text-gray-300">Listening...</span>
+                    </div>
+                    <div id="transcript-box-live"
+                        class="flex-1 bg-gray-900 rounded p-6 overflow-y-auto font-mono text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+                        Initializing...
+                    </div>
 
-            <div id="session-list" class="flex-1 overflow-y-auto p-2 space-y-2">
-                <!-- Session items will be injected here -->
-                <div class="text-center py-10 text-gray-400 text-sm">Waiting for calls...</div>
-            </div>
-        </div>
-
-        <!-- Detail View -->
-        <div class="flex-1 bg-gray-50/50 p-6 overflow-y-auto flex flex-col relative">
-
-            <!-- Empty State -->
-            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 z-0">
-                <div class="bg-white p-6 rounded-full shadow-sm mb-4">
-                    <i data-lucide="phone-off" class="w-12 h-12 text-gray-300"></i>
-                </div>
-                <p class="text-lg font-medium">No Session Selected</p>
-                <p class="text-sm text-gray-400">Select a session from the sidebar to monitor.</p>
-            </div>
-
-            <!-- Active Session Content -->
-            <div id="active-session-view" class="hidden flex-col h-full z-10 max-w-5xl mx-auto w-full">
-
-                <!-- Header Card -->
-                <div class="glass-panel rounded-2xl p-6 mb-6">
-                    <div class="flex items-start justify-between">
-                        <div>
-                            <div class="flex items-center gap-3 mb-1">
-                                <h2 id="view-phone" class="text-2xl font-bold text-gray-900">+91 98765 43210</h2>
-                                <span id="view-status-badge"
-                                    class="px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">IN
-                                    PROGRESS</span>
-                            </div>
-                            <p class="text-sm text-gray-500 flex items-center gap-2">
-                                <i data-lucide="user" class="w-4 h-4"></i>
-                                <span id="view-account">ACC_12345</span>
-                                <span class="text-gray-300">|</span>
-                                <span id="view-id" class="font-mono text-xs">ID: 550e8400-e29b</span>
-                            </p>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-xs text-gray-400 mb-1">Risk Score</div>
-                            <div id="view-risk-level" class="text-2xl font-bold text-gray-800">PENDING</div>
-                        </div>
+                    <!-- 2-Way Controls -->
+                    <div id="controls-area"
+                        class="mt-4 border-t border-gray-700 pt-4 flex flex-col items-center hidden">
+                        <p class="text-xs text-gray-500 mb-2 font-mono uppercase tracking-wider" id="mic-status">Hold
+                            Spacebar or Click & Hold to Speak</p>
+                        <button id="btn-mic"
+                            class="w-16 h-16 rounded-full bg-indigo-600 shadow-lg flex items-center justify-center transition opacity-50 cursor-not-allowed"
+                            onmousedown="startRecording()" onmouseup="stopRecording()" onmouseleave="stopRecording()"
+                            ontouchstart="startRecording()" ontouchend="stopRecording()" disabled>
+                            <i data-lucide="mic" class="w-8 h-8 text-white"></i>
+                        </button>
                     </div>
                 </div>
+            </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
-
-                    <!-- Left: Metrics -->
-                    <div class="lg:col-span-2 space-y-6">
-                        <!-- Verification Cards -->
-                        <div class="grid grid-cols-2 gap-4">
-                            <!-- Voice Match -->
-                            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                                <div class="flex items-center justify-between mb-4">
-                                    <div class="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-                                        <i data-lucide="fingerprint" class="w-5 h-5"></i>
-                                    </div>
-                                    <span id="view-match-score" class="text-lg font-bold text-gray-900">--%</span>
-                                </div>
-                                <h3 class="text-sm font-medium text-gray-600">Voice Match</h3>
-                                <div class="w-full bg-gray-100 rounded-full h-1.5 mt-2 overflow-hidden">
-                                    <div id="view-match-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Liveness -->
-                            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                                <div class="flex items-center justify-between mb-4">
-                                    <div class="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                                        <i data-lucide="activity" class="w-5 h-5"></i>
-                                    </div>
-                                    <span id="view-liveness" class="text-lg font-bold text-gray-900">--</span>
-                                </div>
-                                <h3 class="text-sm font-medium text-gray-600">Liveness Check</h3>
-                                <p class="text-xs text-gray-400 mt-1">AI Probability Analysis</p>
-                            </div>
+            <!-- View: REPORT MODE (Hidden initially) -->
+            <div id="view-report" class="flex-1 flex flex-col hidden">
+                <!-- Risk Score Hero -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <!-- Main Score Card -->
+                    <div
+                        class="col-span-2 bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10">
+                            <i data-lucide="activity" class="w-32 h-32 text-indigo-500"></i>
                         </div>
 
-                        <!-- Timeline / Transcript Placeholder -->
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex-1 min-h-[200px]">
-                            <h3 class="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-                                <i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>
-                                Call Transcript (Live)
-                            </h3>
-                            <div class="space-y-3">
-                                <!-- Mock Items -->
-                                <div class="flex gap-3">
-                                    <div
-                                        class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-none">
-                                        <i data-lucide="bot" class="w-4 h-4 text-gray-500"></i>
-                                    </div>
-                                    <div
-                                        class="bg-gray-50 rounded-lg rounded-tl-none p-3 text-sm text-gray-600 max-w-[80%]">
-                                        Please state your full name for verification.
-                                    </div>
-                                </div>
-                                <div class="flex gap-3 flex-row-reverse">
-                                    <div
-                                        class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-none">
-                                        <i data-lucide="user" class="w-4 h-4 text-indigo-600"></i>
-                                    </div>
-                                    <div
-                                        class="bg-indigo-50 rounded-lg rounded-tr-none p-3 text-sm text-indigo-900 max-w-[80%]">
-                                        My name is John Doe.
-                                    </div>
-                                </div>
+                        <h3 class="text-gray-400 text-sm font-medium uppercase tracking-wider mb-2">Total Fraud Risk
+                            Score
+                        </h3>
+                        <div class="flex items-end gap-4 mb-4">
+                            <span class="text-6xl font-bold" id="risk-score-val">0</span>
+                            <span class="text-2xl text-gray-400 mb-2">/ 100</span>
+                            <span class="px-3 py-1 rounded text-sm font-bold mb-2 ml-auto"
+                                id="risk-badge">CALCULATING</span>
+                        </div>
+
+                        <!-- Progress Bar -->
+                        <div class="w-full bg-gray-700 h-4 rounded-full overflow-hidden">
+                            <div id="risk-bar" class="h-full bg-green-500 risk-gauge" style="width: 0%"></div>
+                        </div>
+                        <p class="mt-4 text-sm text-gray-400" id="risk-desc">Waiting for sufficient data...</p>
+                    </div>
+
+                    <!-- Live Signal Grid -->
+                    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                        <h3 class="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Critical Signals
+                        </h3>
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center">
+                                <span class="flex items-center gap-2"><i data-lucide="bot"
+                                        class="w-4 h-4 text-gray-400"></i> AI Detection</span>
+                                <span id="sig-ai" class="font-mono text-gray-500">--</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="flex items-center gap-2"><i data-lucide="mic"
+                                        class="w-4 h-4 text-gray-400"></i> Voice Match</span>
+                                <span id="sig-match" class="font-mono text-gray-500">--</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="flex items-center gap-2"><i data-lucide="clock"
+                                        class="w-4 h-4 text-gray-400"></i> Latency</span>
+                                <span id="sig-latency" class="font-mono text-gray-500">--</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="flex items-center gap-2"><i data-lucide="database"
+                                        class="w-4 h-4 text-gray-400"></i> Identity</span>
+                                <span id="sig-identity" class="font-mono text-gray-500">--</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Right: Actions -->
-                    <div class="flex flex-col gap-4">
-                        <!-- Intervention Panel -->
-                        <div
-                            class="bg-white p-6 rounded-2xl shadow-lg border border-indigo-100 flex flex-col items-center justify-center text-center h-full relative overflow-hidden">
-                            <div
-                                class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500">
-                            </div>
-
-                            <h3 class="text-sm font-bold text-gray-800 mb-6">Agent Intervention</h3>
-
-                            <button id="btn-record"
-                                class="w-24 h-24 rounded-full bg-red-50 text-red-500 hover:bg-red-100 hover:scale-105 transition-all flex items-center justify-center mb-4 focus:outline-none">
-                                <i data-lucide="mic" class="w-10 h-10"></i>
-                            </button>
-
-                            <p id="mic-status" class="text-sm font-medium text-gray-600">Hold to Speak</p>
-                            <p class="text-xs text-gray-400 mt-2 text-center px-4">Audio will be streamed to the user
-                                immediately.</p>
-
-                            <div id="sending-indicator"
-                                class="hidden mt-4 items-center gap-2 text-xs font-semibold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
-                                <i data-lucide="upload-cloud" class="w-3 h-3 animate-bounce"></i> Sending...
-                            </div>
-                        </div>
-
-                        <!-- Data Panel -->
-                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Extracted Data
-                            </h3>
-                            <div class="space-y-3 text-sm">
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">OTP Status</span>
-                                    <span class="font-medium text-green-600">Verified</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">DOB</span>
-                                    <span class="font-medium text-gray-800">12/05/1985</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">Intent</span>
-                                    <span class="font-medium text-gray-800 text-right">Credit Limit Increase</span>
-                                </div>
-                            </div>
+                    <!-- Related Accounts Grid -->
+                    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                        <h3 class="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4">Related / Authorized
+                            Accounts</h3>
+                        <div id="related-accounts-list"
+                            class="space-y-2 text-sm text-gray-400 font-mono h-32 overflow-y-auto">
+                            <!-- Populated via JS -->
+                            <p class="italic text-gray-600">None found.</p>
                         </div>
                     </div>
-
                 </div>
             </div>
         </div>
+
+        <!-- Detailed Analysis Sections -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Memory Section -->
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 class="text-gray-400 text-sm font-medium uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i data-lucide="brain-circuit" class="w-4 h-4"></i> Cross-Call Memory
+                </h3>
+                <div class="space-y-3 text-sm">
+                    <div class="flex justify-between p-3 bg-gray-700/50 rounded-lg">
+                        <span>Name Stability</span>
+                        <span id="mem-name" class="font-bold text-gray-300">--</span>
+                    </div>
+                    <div class="flex justify-between p-3 bg-gray-700/50 rounded-lg">
+                        <span>DOB Consistency</span>
+                        <span id="mem-dob" class="font-bold text-gray-300">--</span>
+                    </div>
+                    <div class="flex justify-between p-3 bg-gray-700/50 rounded-lg">
+                        <span>Trust Trend</span>
+                        <span id="mem-trust" class="font-bold text-gray-300">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Final Transcript Preview -->
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 flex flex-col h-64">
+                <h3 class="text-gray-400 text-sm font-medium uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <i data-lucide="scroll-text" class="w-4 h-4"></i> Session Transcript
+                </h3>
+                <div id="transcript-box-report"
+                    class="flex-1 bg-gray-900 rounded p-4 overflow-y-auto font-mono text-xs text-gray-300 leading-relaxed">
+                    --
+                </div>
+            </div>
+        </div>
+
+        <!-- Continue Action -->
+        <div class="mt-8 pt-6 border-t border-gray-700 flex justify-between items-center">
+            <p class="text-sm text-gray-400">Review the report above. Proceed with 2-way communication?</p>
+            <button id="btn-continue"
+                class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg flex items-center gap-2 transition"
+                onclick="resumeConversation()">
+                <i data-lucide="message-square-plus" class="w-5 h-5"></i> Continue Conversation
+            </button>
+        </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div class="mt-6 flex justify-end gap-4">
+            <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white font-medium transition"
+                onclick="pollSession()">Force Refresh</button>
+        </div>
+
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-gray-500">
+            <i data-lucide="layout-dashboard" class="w-16 h-16 mb-4 opacity-50"></i>
+            <p>Select a session from the sidebar to view details</p>
+        </div>
+
     </main>
 
     <script>
+        // Init Icons
         lucide.createIcons();
 
-        // State
+        // Constants
+        const POLLING_INTERVAL = 2000;
         let selectedSessionId = null;
-        let sessionsData = [];
-        let isRecording = false;
-        let mediaRecorder;
-        let audioChunks = [];
+        let pollTimer = null;
 
-        const sessionListEl = document.getElementById('session-list');
-        const emptyStateEl = document.getElementById('empty-state');
-        const activeViewEl = document.getElementById('active-session-view');
-        const recordBtn = document.getElementById('btn-record');
-        const micStatus = document.getElementById('mic-status');
-        const sendingIndicator = document.getElementById('sending-indicator');
+        // Elements
+        const elList = document.getElementById('session-list');
+        const elContainer = document.getElementById('report-container');
+        const elEmpty = document.getElementById('empty-state');
+        const elHeaderSub = document.getElementById('header-sub');
+        const elConn = document.getElementById('connection-status');
 
-        // --- Polling Sessions ---
+        // State
+        let sessionsMap = {};
+
+        // Start
+        setInterval(fetchSessions, POLLING_INTERVAL);
+        fetchSessions();
+
+        // Listen for selection
+        function selectSession(sid) {
+            selectedSessionId = sid;
+            elEmpty.classList.add('hidden');
+            elContainer.classList.remove('hidden');
+            elHeaderSub.innerText = `ID: ${sid}`;
+
+            // Highlight sidebar
+            document.querySelectorAll('.session-item').forEach(el => el.classList.remove('bg-gray-700'));
+            document.getElementById(`sess-${sid}`)?.classList.add('bg-gray-700');
+
+            pollSession();
+        }
+
         async function fetchSessions() {
             try {
                 const res = await fetch('/agent/api/sessions');
+                const list = await res.json();
+                elConn.innerText = 'Connected';
+                elConn.classList.add('text-green-400');
+
+                // Diff update (simplified: just rebuild if length changed or simplistic check)
+                // For smoother UI, we'd diff. For hackathon, rebuild list is acceptable if not annoying.
+                // Or better: update content if ID exists.
+
+                let html = '';
+                const validIds = new Set(list.map(s => s.id));
+
+                list.forEach(s => {
+                    const activeClass = (selectedSessionId === s.id) ? 'bg-gray-700' : 'hover:bg-gray-700/50';
+                    const riskColor = s.risk_level === 'HIGH' ? 'text-red-400' : (s.risk_level === 'MEDIUM' ? 'text-yellow-400' : 'text-green-400');
+
+                    html += `
+                        <div id="sess-${s.id}" onclick="selectSession('${s.id}')" class="p-3 mb-2 rounded cursor-pointer transition border border-gray-700/50 ${activeClass} session-item">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-bold text-gray-200">${s.phone}</span>
+                                <span class="text-xs font-mono font-bold ${riskColor}">${s.risk_level}</span>
+                            </div>
+                            <div class="flex justify-between text-xs text-gray-500">
+                                <span>PID: ...${s.account_id.slice(-4)}</span>
+                                <span>${s.status}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                if (html !== elList.innerHTML) {
+                    elList.innerHTML = html;
+                }
+
+                // Auto-Select Logic:
+                // 1. If we have sessions, and (nothing selected OR selected is dead) -> Select first
+                if (list.length > 0) {
+                    if (!selectedSessionId || !validIds.has(selectedSessionId)) {
+                        console.log("Auto-selecting session:", list[0].id);
+                        selectSession(list[0].id);
+                    }
+                }
+
+                // If selected, update detail
+                if (selectedSessionId) pollSession();
+
+            } catch (e) {
+                elConn.innerText = 'Offline';
+                elConn.classList.remove('text-green-400');
+            }
+        }
+
+        async function pollSession() {
+            if (!selectedSessionId) return;
+
+            try {
+                const res = await fetch(`/agent/api/session/${selectedSessionId}`);
+                if (res.status === 404) {
+                    console.log("Session not found (404). Deselecting.");
+                    selectedSessionId = null;
+                    document.getElementById('view-report').classList.add('hidden');
+                    document.getElementById('view-live').classList.add('hidden');
+                    document.getElementById('empty-state').classList.remove('hidden');
+                    return;
+                }
+                if (res.status !== 200) return;
                 const data = await res.json();
-                updateSessionList(data);
-            } catch (err) {
-                console.error("Poll Error:", err);
+
+                updateDashboard(data);
+            } catch (e) {
+                console.error(e);
             }
         }
 
-        function updateSessionList(data) {
-            sessionsData = data;
-            sessionListEl.innerHTML = '';
+        // Global Audio Vars
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
 
-            if (data.length === 0) {
-                sessionListEl.innerHTML = '<div class="text-center py-10 text-gray-400 text-sm">Waiting for calls...</div>';
-                return;
-            }
-
-            data.forEach(session => {
-                const isActive = session.id === selectedSessionId;
-                const riskColor = getRiskColor(session.risk_level);
-
-                const card = document.createElement('div');
-                card.className = `p-4 rounded-xl cursor-pointer transition-all border ${isActive ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-gray-100 hover:bg-gray-50'}`;
-                card.onclick = () => selectSession(session.id);
-
-                card.innerHTML = `
-                    <div class="flex justify-between items-start mb-2">
-                        <span class="font-bold text-gray-800">${session.phone || 'Unknown'}</span>
-                        <span class="text-xs font-bold px-2 py-0.5 rounded ${riskColor.bg} ${riskColor.text}">${session.risk_level}</span>
-                    </div>
-                    <div class="flex justify-between items-end">
-                        <div class="text-xs text-gray-500">
-                            ID: ${session.id.substring(0, 8)}...
-                        </div>
-                        <div class="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                           Match: ${session.voice_match}%
-                        </div>
-                    </div>
-                `;
-                sessionListEl.appendChild(card);
-            });
-
-            // Update Active View if open
-            if (selectedSessionId) {
-                const current = data.find(s => s.id === selectedSessionId);
-                if (current) updateActiveView(current);
-            }
-        }
-
-        function selectSession(id) {
-            selectedSessionId = id;
-            emptyStateEl.classList.add('hidden');
-            activeViewEl.classList.remove('hidden');
-            activeViewEl.classList.add('flex');
-
-            // Immediately render current data
-            const session = sessionsData.find(s => s.id === id);
-            if (session) updateActiveView(session);
-
-            fetchSessions(); // Force refresh to highlight
-        }
-
-        function updateActiveView(session) {
-            document.getElementById('view-phone').innerText = session.phone || 'Unknown';
-            document.getElementById('view-account').innerText = session.account_id || 'N/A';
-            document.getElementById('view-id').innerText = session.id;
-
-            // Risk
-            const riskEl = document.getElementById('view-risk-level');
-            riskEl.innerText = session.risk_level;
-            const rColor = getRiskColor(session.risk_level);
-            riskEl.className = `text-2xl font-bold ${rColor.text}`;
-
-            // Voice Match
-            document.getElementById('view-match-score').innerText = session.voice_match + '%';
-            document.getElementById('view-match-bar').style.width = session.voice_match + '%';
-
-            // Liveness (Mock for display as not in api/sessions yet, defaulting)
-            const isHighRisk = session.risk_level === 'HIGH';
-            document.getElementById('view-liveness').innerText = isHighRisk ? 'Suspicious' : 'Verified';
-            document.getElementById('view-liveness').className = `text-lg font-bold ${isHighRisk ? 'text-red-600' : 'text-emerald-600'}`;
-        }
-
-        function getRiskColor(level) {
-            if (level === 'HIGH') return { bg: 'bg-red-100', text: 'text-red-700' };
-            if (level === 'MEDIUM') return { bg: 'bg-orange-100', text: 'text-orange-700' };
-            return { bg: 'bg-green-100', text: 'text-green-700' };
-        }
-
-        // --- Audio Recording Logic ---
-
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
 
-                mediaRecorder.ondataavailable = e => {
-                    audioChunks.push(e.data);
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
                 };
 
-                mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    audioChunks = [];
-                    if (selectedSessionId) {
-                        await sendAudio(audioBlob);
-                    }
-                };
-            }).catch(err => {
+                mediaRecorder.onstop = uploadAudio;
+
+                console.log("Microphone initialized.");
+                document.getElementById('btn-mic').classList.remove('opacity-50', 'cursor-not-allowed');
+                document.getElementById('btn-mic').classList.add('hover:bg-indigo-500');
+                document.getElementById('btn-mic').disabled = false;
+            } catch (err) {
                 console.error("Mic Error:", err);
-                micStatus.innerText = "Mic Access Denied";
-            });
+                alert("Microphone access denied. Please allow mic access.");
+            }
         }
 
-        // Mouse Events for Push-to-Talk
-        recordBtn.addEventListener('mousedown', startRecording);
-        recordBtn.addEventListener('mouseup', stopRecording);
-        recordBtn.addEventListener('mouseleave', () => {
-            if (isRecording) stopRecording();
-        });
-
         function startRecording() {
-            if (!mediaRecorder || !selectedSessionId) return;
-            isRecording = true;
+            if (!mediaRecorder || mediaRecorder.state === 'recording') return;
             audioChunks = [];
             mediaRecorder.start();
+            isRecording = true;
 
-            recordBtn.classList.add('recording-pulse', 'bg-red-100', 'text-red-600');
-            micStatus.innerText = "Recording... Release to Send";
+            // UI Visuals
+            const btn = document.getElementById('btn-mic');
+            btn.classList.add('bg-red-600', 'scale-105');
+            btn.classList.remove('bg-indigo-600');
+            btn.innerHTML = '<i data-lucide="mic" class="w-8 h-8 animate-pulse text-white"></i>';
+            document.getElementById('mic-status').innerText = "Recording... Release to Send";
         }
 
         function stopRecording() {
-            if (!isRecording) return;
-            isRecording = false;
+            if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
             mediaRecorder.stop();
+            isRecording = false;
 
-            recordBtn.classList.remove('recording-pulse', 'bg-red-100', 'text-red-600');
-            micStatus.innerText = "Hold to Speak";
+            // UI Visuals
+            const btn = document.getElementById('btn-mic');
+            btn.classList.remove('bg-red-600', 'scale-105');
+            btn.classList.add('bg-indigo-600');
+            btn.innerHTML = '<i data-lucide="mic" class="w-8 h-8 text-white"></i>';
+            document.getElementById('mic-status').innerText = "Sending...";
         }
 
-        async function sendAudio(blob) {
-            sendingIndicator.classList.remove('hidden');
-            sendingIndicator.classList.add('flex');
-
+        async function uploadAudio() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
             const formData = new FormData();
-            formData.append('file', blob, 'agent_msg.wav');
+            formData.append('file', audioBlob, 'agent_voice.wav');
             formData.append('session_id', selectedSessionId);
 
             try {
-                await fetch('/agent/speak', {
+                const res = await fetch('/agent/speak', {
                     method: 'POST',
                     body: formData
                 });
+                const data = await res.json();
+
+                if (data.status === 'sent') {
+                    // Success feedback
+                    document.getElementById('mic-status').innerText = "Sent! Waiting for response...";
+
+                    // Add to transcript immediately for UX
+                    const tBox = document.getElementById('transcript-box-live');
+                    tBox.innerText += `\n[Agent]: (Audio Message Sent)\n`;
+                    tBox.scrollTop = tBox.scrollHeight;
+                } else {
+                    document.getElementById('mic-status').innerText = "Error sending.";
+                }
             } catch (e) {
-                console.error("Send Error", e);
-                alert("Failed to send audio");
-            } finally {
-                sendingIndicator.classList.add('hidden');
-                sendingIndicator.classList.remove('flex');
+                console.error(e);
+                document.getElementById('mic-status').innerText = "Network Error";
             }
         }
 
-        // Poll every 3 seconds
-        setInterval(fetchSessions, 3000);
-        fetchSessions();
+        let isInterventionMode = false;
+
+        async function resumeConversation() {
+            // Switch to Live View
+            isInterventionMode = true;
+
+            document.getElementById('view-report').classList.add('hidden');
+            document.getElementById('view-live').classList.remove('hidden');
+
+            // Show Mic Controls
+            document.getElementById('controls-area').classList.remove('hidden');
+
+            // Init Mic
+            await initAudio();
+        }
+
+        function updateDashboard(data) {
+            const r = data.report || {};
+            const risk = data.risk_breakdown || {};
+            const breakdown = risk.breakdown || {};
+            const isCompleted = data.state === "COMPLETED" || (data.report && data.report.fraud_risk_score !== undefined);
+
+            const elViewLive = document.getElementById('view-live');
+            const elViewReport = document.getElementById('view-report');
+
+            // View Switching Logic
+            if (isCompleted && !isInterventionMode) {
+                // Show Report, Hide Live (Only if NOT interrupting)
+                elViewLive.classList.add('hidden');
+                elViewReport.classList.remove('hidden');
+
+                // Update Report Elements
+                // 1. Risk Score
+                const score = Math.round(data.report?.fraud_risk_score || 0);
+                document.getElementById('risk-score-val').innerText = score;
+
+                const bar = document.getElementById('risk-bar');
+                bar.style.width = `${score}%`;
+
+                const badge = document.getElementById('risk-badge');
+                const desc = document.getElementById('risk-desc');
+
+                if (score >= 60) {
+                    bar.className = 'h-full risk-gauge bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]';
+                    badge.className = 'px-3 py-1 rounded text-sm font-bold mb-2 ml-auto bg-red-500/20 text-red-400 border border-red-500/30';
+                    badge.innerText = 'HIGH RISK';
+                    desc.innerText = '⚠️ Immediate Intervention Required. Pattern matches known fraud.';
+                } else if (score >= 40) {
+                    bar.className = 'h-full risk-gauge bg-yellow-500';
+                    badge.className = 'px-3 py-1 rounded text-sm font-bold mb-2 ml-auto bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
+                    badge.innerText = 'MEDIUM RISK';
+                    desc.innerText = '⚠️ Monitor closely. Some signals are flagged.';
+                } else {
+                    bar.className = 'h-full risk-gauge bg-green-500';
+                    badge.className = 'px-3 py-1 rounded text-sm font-bold mb-2 ml-auto bg-green-500/20 text-green-400 border border-green-500/30';
+                    badge.innerText = 'LOW RISK';
+                    desc.innerText = '✅ Session appears normal. Verification proceeding.';
+                }
+
+                // 2. Signals
+                const aiProb = (r.ai_audio_probability || 0) * 100;
+                const elAi = document.getElementById('sig-ai');
+                elAi.innerHTML = `${aiProb.toFixed(0)}% <span class="${aiProb > 50 ? 'text-red-400' : 'text-green-400'}">${aiProb > 50 ? '(FAKE)' : '(HUMAN)'}</span>`;
+
+                const vmScore = (r.voice_match_score || 0) * 100;
+                const elMatch = document.getElementById('sig-match');
+                if (data.report?.is_first_time_caller) {
+                    elMatch.innerHTML = `NEW <span class="text-blue-400">(First Time)</span>`;
+                } else {
+                    elMatch.innerHTML = `${vmScore.toFixed(0)}% <span class="${vmScore < 70 ? 'text-red-400' : 'text-green-400'}">${vmScore < 70 ? '(MISMATCH)' : '(MATCH)'}</span>`;
+                }
+
+                // Identity
+                const identOK = r.personal_details_verified || (r.personal_details?.name && !breakdown.data_score);
+                const elIdent = document.getElementById('sig-identity');
+                elIdent.innerHTML = `<span class="${identOK ? 'text-green-400' : 'text-yellow-500'}">${identOK ? 'VERIFIED' : 'PENDING'}</span>`;
+
+                // Related Accounts (Graph Access)
+                const elRelated = document.getElementById('related-accounts-list');
+                if (r.related_accounts && r.related_accounts.length > 0) {
+                    let listHtml = r.related_accounts.map(acc =>
+                        `<div class="flex items-center gap-2">
+                            <i data-lucide="link" class="w-3 h-3 text-indigo-400"></i>
+                            <span>${acc}</span>
+                         </div>`
+                    ).join('');
+                    elRelated.innerHTML = listHtml;
+                    lucide.createIcons();
+                } else {
+                    elRelated.innerHTML = '<p class="italic text-gray-600">None found (Standalone Node).</p>';
+                }
+
+                // Latency
+                let latVal = 0;
+                if (data.latency_risks && data.latency_risks.length > 0) {
+                    latVal = data.latency_risks[0].hesitation;
+                }
+                document.getElementById('sig-latency').innerText = `${latVal.toFixed(2)}s`;
+
+                // Memory
+                const signals = risk.signals || {};
+                document.getElementById('mem-name').innerHTML = `${((signals.name_stability || 1) * 100).toFixed(0)}%`;
+                document.getElementById('mem-dob').innerHTML = `${((signals.dob_stability || 1) * 100).toFixed(0)}%`;
+                document.getElementById('mem-trust').innerHTML = (signals.trust_trend || 'Neutral').toUpperCase();
+
+                // Transcript Preview in Report
+                const txt = data.transcript || "Conversation ended.";
+                const tBox = document.getElementById('transcript-box-report');
+                tBox.innerText = txt;
+                tBox.scrollTop = tBox.scrollHeight;
+
+            } else {
+                // Show Live, Hide Report
+                elViewLive.classList.remove('hidden');
+                elViewReport.classList.add('hidden');
+
+                // Update Live Transcript
+                const txt = data.transcript || "";
+                const tBox = document.getElementById('transcript-box-live');
+                // Only update if changed to avoid jumpiness? (optional, straightforward to just update)
+                tBox.innerText = txt || "Waiting for audio...";
+                tBox.scrollTop = tBox.scrollHeight;
+            }
+        }
 
     </script>
 </body>
