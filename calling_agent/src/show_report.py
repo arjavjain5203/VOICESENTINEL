@@ -128,9 +128,33 @@ def show_popup(report_json):
 
     # Details
     call_id = data.get('call_id', 'N/A')
-    add_row("Phone Number:", data.get('phone_number', 'Unknown'))
+    phone = data.get('phone_number', 'Unknown')
+    add_row("Phone Number:", phone)
     add_row("Call ID:", call_id[:8] + "...")
     
+    # Trust Scores (NEW)
+    p_trust = data.get('phone_trust_score', 50)
+    u_trust = data.get('user_id_trust_score', 50)
+    
+    tk.Label(frame, text="", bg="#f0f0f0").pack() 
+    add_row("Phone Trust:", f"{p_trust} / 100", color="#2e7d32" if p_trust > 60 else "#d32f2f")
+    add_row("User Trust:", f"{u_trust} / 100", color="#2e7d32" if u_trust > 60 else "#d32f2f")
+    
+    # Extracted Identity (NEW)
+    tk.Label(frame, text="", bg="#f0f0f0").pack() 
+    details = data.get('personal_details', {})
+    name = details.get('name', 'Not Detected')
+    dob = details.get('dob', 'Not Detected')
+    intent = details.get('intent', 'Unknown')
+    
+    add_row("Intent:", intent, color="#0277bd")
+    add_row("Name (Voice):", name, color="#333" if name else "#999")
+    add_row("DOB (Voice):", dob, color="#333" if dob else "#999")
+    
+    # OTP
+    otp_ok = data.get('otp_verified', False)
+    add_row("OTP Status:", "✅ Verified" if otp_ok else "❌ Failed", color="#2e7d32" if otp_ok else "#d32f2f")
+
     # Metrics
     tk.Label(frame, text="", bg="#f0f0f0").pack() 
     

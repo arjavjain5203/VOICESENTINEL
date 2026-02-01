@@ -1,7 +1,15 @@
+import librosa
+import numpy as np
 
-def load_audio(path):
+def load_audio(path, sr=16000):
     """
-    Mock implementation of load_audio.
-    Just returns the path so features.py can decide which vector to return.
+    Loads audio file using librosa.
+    Returns numpy array.
     """
-    return path
+    try:
+        y, _ = librosa.load(path, sr=sr)
+        return y
+    except Exception as e:
+        print(f"[Error] Failed to load audio {path}: {e}")
+        return np.zeros(16000) # Return 1s silence on error
+

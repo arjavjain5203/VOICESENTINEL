@@ -1,7 +1,6 @@
 import os
 import sys
 import requests
-import joblib
 import numpy as np
 import uuid
 from flask import Flask, request, Response
@@ -12,29 +11,11 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 from src.identity_processor import validate_identity, extract_details_from_transcript
 from src.audio_utils import load_audio
-from src.features import extract_features
 # from src.risk_engine import calculate_risk # We will use the logic directly or import
 from src.risk_engine import calculate_risk
 from src.asr_utils import transcribe_audio
 
 app = Flask(__name__)
-
-# Load Models (Global load for performance)
-SCALER = None
-MODEL = None
-
-def load_models():
-    global SCALER, MODEL
-    try:
-        if os.path.exists("scaler.pkl"):
-            SCALER = joblib.load("scaler.pkl")
-        if os.path.exists("audio_classifier.pkl"):
-            MODEL = joblib.load("audio_classifier.pkl")
-        print("[System] Models loaded successfully.")
-    except Exception as e:
-        print(f"[Error] loading models: {e}")
-
-load_models()
 
 @app.route("/voice", methods=['GET', 'POST'])
 def voice():
@@ -106,16 +87,15 @@ def process_input():
         prob_ai = 0.0
         voice_risk = "LOW"
         
-        if MODEL and SCALER:
-            try:
-                audio = load_audio(filename)
-                features = extract_features(audio).reshape(1, -1)
-                features_scaled = SCALER.transform(features)
-                probs = MODEL.predict_proba(features_scaled)[0]
-                prob_ai = probs[1]
-                voice_risk = "HIGH" if prob_ai > 0.5 else "LOW"
-            except Exception as e:
-                print(f"[Feature Error] {e}")
+        try:
+            # New AI Detection Model (Transformers)
+            from src.ai_detector import detect_ai_audio
+            prob_ai = detect_ai_audio(filename)
+            voice_risk = "HIGH" if prob_ai > 0.5 else "LOW"
+            print(f"[AI Check] Probability: {prob_ai:.4f}, Risk: {voice_risk}")
+            
+        except Exception as e:
+            print(f"[AI Detection Error] {e}")
         
         # 6. Risk Calculation
         otp_success, identity_fails, _ = validate_identity(details["otp"], details["name"], details["dob"])

@@ -10,6 +10,7 @@ import hashlib
 MONGO_URI = "mongodb://localhost:27017/"
 DB_NAME = "voice_sentinel"
 COLLECTION_NAME = "call_verification_records"
+MEMORY_COLLECTION_NAME = "cross_call_memory"
 
 def get_db_connection():
     client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
@@ -21,6 +22,11 @@ def init_db():
         client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
         client.server_info()
         print(f"[Database] Connected to MongoDB (Local): {DB_NAME}")
+        
+        # Ensure indexes for memory collection
+        db = client[DB_NAME]
+        db[MEMORY_COLLECTION_NAME].create_index("phone_number", unique=True)
+        print(f"[Database] specific indexes created for {MEMORY_COLLECTION_NAME}")
     except Exception as e:
         print(f"❌ [Database Error] Could not connect to MongoDB: {e}")
 
@@ -174,3 +180,51 @@ def get_recent_calls(account_id, limit=5):
     # Map account_id to phone_number query logic if needed
     # returning empty list to avoid breaking legacy calls
     return []
+
+def get_cross_call_memory(phone_number):
+    """
+    Retrieves the cross-call memory for a specific phone number.
+    Returns dict or None.
+    """
+    db = get_db_connection()
+    return db[MEMORY_COLLECTION_NAME].find_one({"phone_number": phone_number})
+
+def update_cross_call_memory(phone_number, data_update):
+    """
+    Updates the cross-call memory for a phone number.
+    data_update: dict containing fields to update (e.g., last_verified_name, trust_score_history)
+    """
+    db = get_db_connection()
+    
+    # We use upsert=True to create if not exists
+    # We want to push to arrays and set scalar values
+    
+    set_fields = {}
+    push_fields = {}
+    
+    # Fields that overwrite
+    if 'last_verified_name' in data_update:
+        set_fields['last_verified_name'] = data_update['last_verified_name']
+    if 'last_verified_dob' in data_update:
+        set_fields['last_verified_dob'] = data_update['last_verified_dob']
+    if 'last_verified_embedding_hash' in data_update:
+        set_fields['last_verified_embedding_hash'] = data_update['last_verified_embedding_hash']
+        
+    # Fields that append
+    if 'trust_score' in data_update:
+        push_fields['trust_score_history'] = data_update['trust_score']
+    if 'call_timestamp' in data_update:
+        push_fields['call_timestamps'] = data_update['call_timestamp']
+        
+    update_query = {}
+    if set_fields:
+        update_query["$set"] = set_fields
+    if push_fields:
+        update_query["$push"] = push_fields
+        
+    if update_query:
+        db[MEMORY_COLLECTION_NAME].update_one(
+            {"phone_number": phone_number},
+            update_query,
+            upsert=True
+        )

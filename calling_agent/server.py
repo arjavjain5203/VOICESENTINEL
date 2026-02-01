@@ -6,7 +6,7 @@ import threading
 import sys
 import wave
 import contextlib
-import joblib
+import contextlib
 import numpy as np
 from datetime import datetime
 
@@ -15,23 +15,34 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 from src.risk_engine import calculate_risk
 from src.ivr_flow import IVR_STEPS, get_next_question, ensure_ivr_audio_files
-from src.database import init_db, get_recent_calls, save_verification_record, is_first_time_caller, get_baseline_audio, get_user_embedding
+from src.database import init_db, get_recent_calls, save_verification_record, is_first_time_caller, get_baseline_audio, get_user_embedding, get_cross_call_memory, update_cross_call_memory
 from src.tts_utils import generate_wav
 from src.history import analyze_history
+from src.memory_engine import calculate_name_stability, calculate_dob_stability, calculate_trust_trend
 from src.voice_auth import VoiceAuthenticator
-from src.features import extract_features
 from src.audio_utils import load_audio
 from src.asr_utils import transcribe_audio
 from src.identity_processor import extract_details_from_transcript, validate_identity
 from src.risk_engine import calculate_risk
+from src.ai_detector import detect_ai_audio
+from src.latency_engine import get_audio_duration, calculate_hesitation_risk
+import time
 
 app = Flask(__name__)
 
 # Global Sessions Store
 sessions = {}
 
-# Ensure IVR questions exist
+# Ensure IVR questions exist & Cache Durations
 ensure_ivr_audio_files(generate_wav)
+PROMPT_DURATIONS = {}
+for step in IVR_STEPS:
+    try:
+        PROMPT_DURATIONS[step['id']] = get_audio_duration(step['audio_file'])
+        print(f"[Init] Cached duration for {step['id']}: {PROMPT_DURATIONS[step['id']]:.2f}s")
+    except Exception as e:
+        print(f"[Init] Failed to cache duration for {step['id']}: {e}")
+        PROMPT_DURATIONS[step['id']] = 0.0
 
     # Helper: Merge Audio Files
 def merge_audio_files(outfile, file_list):
@@ -125,23 +136,17 @@ def analysis_thread(session_id):
     except Exception as e:
         print(f"[Analysis] Transcription Error: {e}")
     
-    # 3. AI Detection (Audio Classifier)
+    # 3. AI Detection (HuggingFace Transformers)
     try:
-        # Check existence again
         if not os.path.exists(accumulated_path): return
-            
-        scaler = joblib.load("scaler.pkl")
-        model = joblib.load("audio_classifier.pkl")
         
-        audio = load_audio(accumulated_path)
-        feats = extract_features(audio).reshape(1, -1)
-        feats_scaled = scaler.transform(feats)
-        probs = model.predict_proba(feats_scaled)[0]
-        session['voice_prob'] = probs[1]
+        # New Deepfake detection
+        ai_prob = detect_ai_audio(accumulated_path)
+        session['voice_prob'] = ai_prob
+        print(f"[Analysis] AI Prob: {ai_prob:.4f}")
+        
     except Exception as e:
-        # Suppress generic errors if just file missing during race condition
-        if "No such file" not in str(e):
-            print(f"[Analysis] AI Detection Error: {e}")
+        print(f"[Analysis] AI Detection Error: {e}")
         session['voice_prob'] = 0.0
 
     # 4. Voice Auth (Resemblyzer)
@@ -210,7 +215,9 @@ def start_call():
         "voice_prob": 0.0,
         "voice_match_score": 0.0,
         "analyzed": False,
-        "transcript": ""
+        "transcript": "",
+        "step_start_time": time.time(),
+        "latency_risks": []  # List of {step, hesitation, score}
     }
     
     # Return first question
@@ -244,6 +251,28 @@ def submit_response():
     # Save Chunk
     chunk_name = f"temp_{session_id}_{len(session['chunks'])}.wav"
     file.save(chunk_name)
+    
+    # --- Latency Check (First Chunk Only) ---
+    if len(session['chunks']) == 0:
+        current_step_id = get_next_question(session['step_index'])['id']
+        arrival_time = time.time()
+        start_time = session.get('step_start_time', arrival_time)
+        prompt_dur = PROMPT_DURATIONS.get(current_step_id, 0.0)
+        
+        # Determine when prompt ENDED (approx) = Start + Duration
+        prompt_end_time = start_time + prompt_dur
+        
+        r_level, r_score, hesitation = calculate_hesitation_risk(prompt_end_time, arrival_time)
+        
+        print(f"[Latency] Step: {current_step_id}, Hesitation: {hesitation:.2f}s, Risk: {r_level}", flush=True)
+        
+        session['latency_risks'].append({
+            "step": current_step_id,
+            "hesitation": hesitation,
+            "score": r_score,
+            "level": r_level
+        })
+        
     session['chunks'].append(chunk_name)
     
     # Merge
@@ -270,6 +299,7 @@ def submit_response():
     next_q = get_next_question(next_index)
     
     if next_q:
+        session['step_start_time'] = time.time() # Reset timer for next step
         return jsonify({
             "status": "continued",
             "audio_url": f"/audio/{os.path.basename(next_q['audio_file'])}",
@@ -287,13 +317,30 @@ def submit_response():
         
         # History
         # History
-        history = get_recent_calls(session['account_id'])
+        # History & Memory Engine
+        history = get_recent_calls(session['account_id']) # Legacy history (list of calls)
         mod, explanations = analyze_history(history)
+        
+        # New Cross-Call Memory (Priority 1)
+        phone = session['phone']
+        memory_record = get_cross_call_memory(phone)
         
         details = session['extracted_details']
         
+        # Compute Stability Scores
+        name_score, name_changed = calculate_name_stability(details.get("name"), memory_record)
+        dob_score, dob_mismatch = calculate_dob_stability(details.get("dob"), memory_record)
+        trust_trend = calculate_trust_trend(50, memory_record) # Current trust passed as placeholder/default for now until updated
+        
         otp_success, identity_fails, _ = validate_identity(details["otp"], details["name"], details["dob"])
         
+        # Calculate average latency score
+        latencies = session.get('latency_risks', [])
+        if latencies:
+            avg_latency_score = sum(l['score'] for l in latencies) / len(latencies)
+        else:
+            avg_latency_score = 0.0
+            
         risk_data = calculate_risk(
             otp_success=otp_success,
             identity_fails=identity_fails,
@@ -301,7 +348,11 @@ def submit_response():
             intent=details['intent'],
             voice_prob=session['voice_prob'],
             history_modifier=mod,
-            country_mismatch=session['country_mismatch']
+            country_mismatch=session['country_mismatch'],
+            name_stability=name_score,
+            dob_stability=dob_score,
+            trust_trend=trust_trend,
+            latency_score=avg_latency_score
         )
         
         risk_data["voice_match_score"] = session['voice_match_score']
@@ -354,6 +405,26 @@ def submit_response():
         
         # 3. Save to MongoDB
         saved_record = save_verification_record(verification_data)
+        if saved_record:
+            verification_data.update(saved_record)
+            
+            # 4. Update Cross-Call Memory
+            # We trust the provided details if verification status is VERIFIED or at least PARTIAL
+            # For strictness, let's update if risk is not HIGH. or just track what was claimed.
+            # Requirement: "Track name claims across calls"
+            
+            # Calculate new trust score snapshot (using the calculated score)
+            # Default trust is 50, modify by risk? 
+            # Simplified: 100 - risk_percentage
+            current_trust = 100.0 - risk_data["risk_percentage"]
+            
+            mem_update = {
+                "last_verified_name": details.get("name"),
+                "last_verified_dob": details.get("dob"),
+                "trust_score": current_trust,
+                "call_timestamp": datetime.utcnow()
+            }
+            update_cross_call_memory(session['phone'], mem_update)
 
         # 4. Print Terminal Report
         try:
@@ -395,6 +466,17 @@ def submit_response():
             r_score = risk_data["risk_percentage"]
             print(f"Fraud Risk Score  : {r_score} / 100", flush=True)
             print(f"Risk Level        : {risk_data['final_risk']}", flush=True)
+            print(f"Risk Level        : {risk_data['final_risk']}", flush=True)
+            
+            # Print Memory Signals
+            print("-"*80, flush=True)
+            print("MEMORY SIGNALS", flush=True)
+            print("-"*80, flush=True)
+            print(f"Name Stability    : {name_score*100:.0f}% {'(Changed)' if name_changed else '(Stable)'}", flush=True)
+            print(f"DOB Stability     : {dob_score*100:.0f}% {'(Mismatch)' if dob_mismatch > 0 else '(Stable)'}", flush=True)
+            print(f"Trust Trend       : {trust_trend.upper()}", flush=True)
+            print(f"Avg Latency Score : {avg_latency_score:.2f} (Hesitation Risk)", flush=True)
+            
             print(f"\nSTATUS            : {verification_data['verification_status']}", flush=True)
             print("="*80 + "\n", flush=True)
 
@@ -508,33 +590,6 @@ def poll_agent(session_id):
     else:
         return jsonify({"has_audio": False})
 
-if __name__ == '__main__':
-    # Init DB
-    try:
-        init_db()
-    except:
-        pass
-    # To allow access over Wi-Fi, we must bind to 0.0.0.0
-    
-    # Suppress heavy polling logs
-    import logging
-    log = logging.getLogger('werkzeug')
-    # Custom filter to mute polling logs
-    class PollFilter(logging.Filter):
-        def filter(self, record):
-            msg = record.getMessage()
-            if "/client/poll_agent/" in msg and " 200 " in msg: return False
-            if "/client/wait_for_agent/" in msg and " 404 " in msg: return False
-            return True
-            
-    log.addFilter(PollFilter())
-    
-    app.run(host='0.0.0.0', port=5001, debug=True)
-
-# --- Agent Dashboard Routes ---
-
-
-
 @app.route('/agent/api/sessions')
 def get_sessions():
     """
@@ -564,3 +619,26 @@ def get_sessions():
             "report_json": None # placeholder
         })
     return jsonify(session_list)
+
+if __name__ == '__main__':
+    # Init DB
+    try:
+        init_db()
+    except:
+        pass
+    # To allow access over Wi-Fi, we must bind to 0.0.0.0
+    
+    # Suppress heavy polling logs
+    import logging
+    log = logging.getLogger('werkzeug')
+    # Custom filter to mute polling logs
+    class PollFilter(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            if "/client/poll_agent/" in msg and " 200 " in msg: return False
+            if "/client/wait_for_agent/" in msg and " 404 " in msg: return False
+            return True
+            
+    log.addFilter(PollFilter())
+    
+    app.run(host='0.0.0.0', port=5001, debug=True)

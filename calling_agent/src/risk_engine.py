@@ -1,22 +1,26 @@
-def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0.0, voice_match_score=1.0, history_modifier=0, country_mismatch=False):
+def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0.0, voice_match_score=1.0, history_modifier=0, country_mismatch=False,
+                   name_stability=1.0, dob_stability=1.0, trust_trend="stable", latency_score=0.0):
     """
     Aggregates risk signals into a final percentage score based on user-defined weights.
     
     Weights:
     - OTP Verification: 1 (Add if Failed)
     - Personal Data: 2 (Add if Failed)
-    - Voice Analysis: 2 (Add * prob_ai)
+    - Voice Analysis: 30 (Add * prob_ai) [CRITICAL]
+    - Voice Match: 15 (Add * (1-match)) [HIGH]
     - Intent: Weight 1-4
     - Country Mismatch: 2 (Add if True)
     - History Modifier: -1 (Safe), 0 (Neutral), +1 (Risky)
       -> Adjusts final level, NOT just raw score.
     
-    Total Max Score = 11.
+    Total Max Score = 62.0
     """
     
     # Intialize Score
     current_score = 0.0
     details = {}
+    
+    # --- CORE SIGNALS ---
     
     # 1. OTP (Weight 1)
     if not otp_success:
@@ -32,16 +36,17 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     else:
         details["data_score"] = 0.0
         
-    # 3. Voice Analysis (Weight 2)
+    # 3. Voice Analysis (Weight 30 - CRITICAL)
     # Scale proportional to AI probability
-    voice_contribution = voice_prob * 2.0
+    # If 100% AI, adds 30 points.
+    voice_contribution = voice_prob * 30.0
     current_score += voice_contribution
     details["voice_score"] = voice_contribution
 
-    # 3b. Voice Match (Weight 2) - EQUAL TO AI
+    # 3b. Voice Match (Weight 15 - HIGH IMPORTANCE) - EQUAL TO AI
     # Match 1.0 -> Risk 0
-    # Match 0.0 -> Risk 2
-    voice_match_risk = (1.0 - voice_match_score) * 2.0
+    # Match 0.0 -> Risk 15
+    voice_match_risk = (1.0 - voice_match_score) * 15.0
     current_score += voice_match_risk
     details["match_score"] = voice_match_risk
     
@@ -70,9 +75,43 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
         details["country_score"] = 2.0
     else:
         details["country_score"] = 0.0
+
+    # --- MEMORY SIGNALS (Priority 1) ---
+    
+    # 6. Name Stability (Weight 2)
+    # 1.0 = Stable (0 risk), 0.0 = Changed (2 risk)
+    name_risk = (1.0 - name_stability) * 2.0
+    current_score += name_risk
+    details["name_stability_risk"] = name_risk
+    
+    # 7. DOB Stability (Weight 3 - Critical)
+    # 1.0 = Stable, 0.0 = Mismatch
+    dob_risk = (1.0 - dob_stability) * 3.0
+    current_score += dob_risk
+    details["dob_stability_risk"] = dob_risk
+    
+    # 8. Trust Trend (Weight 1)
+    # decreasing -> +1 risk
+    if trust_trend == "decreasing":
+        current_score += 1.0
+        details["trust_trend_risk"] = 1.0
+    else:
+        details["trust_trend_risk"] = 0.0
+        
+    # --- LATENCY SIGNALS (Priority 2) ---
+    # 9. Response Latency (Weight 2)
+    # Score 0.0 to 1.0 input (where 0.7 is high risk)
+    # Scaled by 2
+    l_risk = latency_score * 2.0
+    current_score += l_risk
+    details["latency_risk"] = l_risk
     
     # Calculate Percentage
-    max_score = 13.0 # Updated from 11 (Added 2 for Voice Match)
+    # Calculate Percentage
+    # Max Score Calculation:
+    # Base (OTP 1 + Data 2 + Intent 4 + Country 2 + Name 2 + DOB 3 + Trend 1 + Latency 2) = 17.0
+    # + VoiceAI (30) + VoiceMatch (15) = 62.0
+    max_score = 62.0
     risk_percentage = (current_score / max_score) * 100.0
     
     # Determine Initial Risk Label
@@ -114,6 +153,11 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
             "voice_risk": voice_risk,
             "voice_prob": voice_prob,
             "intent": intent,
-            "country_mismatch": country_mismatch
+            "intent": intent,
+            "country_mismatch": country_mismatch,
+            "name_stability": name_stability,
+            "dob_stability": dob_stability,
+            "trust_trend": trust_trend,
+            "latency_score": latency_score
         }
     }

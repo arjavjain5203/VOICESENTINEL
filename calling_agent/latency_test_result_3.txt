@@ -1,0 +1,13 @@
+[Test] Generating Audio...
+Generated audio file: test_latency.wav
+[Test] Starting Call Session...
+[Test] Session ID: d4f32cdf-ffbe-4c31-9aea-41182d632771
+[Test] Simulate Hesitation: Waiting 15s...
+[Test] Sending Audio Chunk...
+[Test] Response Code: 200
+{
+  "audio_url": "/audio/ask_name.wav",
+  "next_step": "ask_name",
+  "status": "continued"
+}
+
