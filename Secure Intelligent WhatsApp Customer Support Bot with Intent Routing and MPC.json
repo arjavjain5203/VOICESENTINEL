@@ -1,0 +1,1241 @@
+{
+  "name": "Secure Intelligent WhatsApp Customer Support Bot with Intent Routing and MPC",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "escalation_threshold",
+              "value": 0.7,
+              "type": "number"
+            },
+            {
+              "id": "id-2",
+              "name": "mpc_enabled",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "id-3",
+              "name": "log_all_interactions",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "13829a64-a4a9-4d6d-a820-4f7490901683",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1456,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "user_id",
+              "value": "={{$('When chat message received').item.json.sessionId }}",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "message_text",
+              "value": "={{ $('When chat message received').item.json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "message_id",
+              "value": "={{ $workflow.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f75ae44c-d9e0-4d1e-8f0e-cdcb8840f9a0",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1680,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "FAQ",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "f965f352-055f-40d4-912f-ccf69b025a01"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "FAQ"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "SENSITIVE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "fc8726ba-ef2e-42a0-b2c4-203985398913"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SENSITIVE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "SEARCH",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "56da5404-6d4b-46cc-ac90-f4cc1dfdbb48"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SEARCH"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "ESCALATE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "1a3ca9e4-ebf2-4b17-922d-8ff3795908c4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ESCALATE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "29ea5608-0673-4f3d-a8f2-db2455738017",
+      "name": "Route by Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2448,
+        1360
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT answer, category\nFROM faq_table\nWHERE\n  question ILIKE '%' || $1 || '%'\n  OR $1 = ANY(keywords)\nLIMIT 1;\n",
+        "options": {
+          "queryReplacement": "={{ $('Extract Message Data').item.json.message_text }}"
+        }
+      },
+      "id": "28dd1a94-14d8-4350-905f-c563846969b8",
+      "name": "Query FAQ Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3120,
+        928
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "Q6o18h5pep4xSeW8",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $json.answer }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "85ce05fb-9a0a-47dc-a59e-582f039ac56f",
+      "name": "FAQ Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3344,
+        928
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "source",
+              "value": "FAQ",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "content",
+              "value": "={{ $json.answer }}",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "category",
+              "value": "={{ $json.category }}",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "user_id",
+              "value": "={{ $('Extract Message Data').item.json.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "message_text",
+              "value": "={{ $('Extract Message Data').item.json.message_text }}",
+              "type": "string"
+            },
+            {
+              "id": "id-6",
+              "name": "intent",
+              "value": "={{ $('Classify Intent (Gemini)').item.json.intent }}",
+              "type": "string"
+            },
+            {
+              "id": "id-7",
+              "name": "confidence",
+              "value": "={{ $('Classify Intent (Gemini)').item.json.confidence }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4f27048b-a182-4efb-96b3-a06e5efe7a42",
+      "name": "Prepare FAQ Answer",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3568,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// MPC Simulation: Split sensitive data into encrypted shares\n// NEVER reconstruct the original data\nconst crypto = require('crypto');\n\nconst messageText = $input.item.json.message_text;\nconst userId = $input.item.json.user_id;\n\n// Generate random shares using XOR-based secret sharing\nfunction splitIntoShares(data) {\n  const buffer = Buffer.from(data, 'utf8');\n  const share1 = crypto.randomBytes(buffer.length);\n  const share2 = Buffer.alloc(buffer.length);\n  \n  // XOR to create second share\n  for (let i = 0; i < buffer.length; i++) {\n    share2[i] = buffer[i] ^ share1[i];\n  }\n  \n  return {\n    share1: share1.toString('base64'),\n    share2: share2.toString('base64'),\n    length: buffer.length\n  };\n}\n\nconst shares = splitIntoShares(messageText);\n\nreturn [\n  {\n    json: {\n      share_id: 1,\n      share_data: shares.share1,\n      length: shares.length,\n      user_id: userId,\n      timestamp: new Date().toISOString()\n    }\n  },\n  {\n    json: {\n      share_id: 2,\n      share_data: shares.share2,\n      length: shares.length,\n      user_id: userId,\n      timestamp: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "a12188b3-1ac3-47d2-976e-05a339b4d260",
+      "name": "MPC - Split Sensitive Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2672,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Process Share 1 independently\n// Perform validation checks WITHOUT reconstructing original data\nconst crypto = require('crypto');\n\nconst shareData = $input.item.json.share_data;\nconst shareId = $input.item.json.share_id;\nconst length = $input.item.json.length;\n\n// Simulate processing: check share integrity\nconst shareBuffer = Buffer.from(shareData, 'base64');\nconst checksum = crypto.createHash('sha256').update(shareBuffer).digest('hex');\n\n// Validation logic on encrypted share only\nconst isValid = shareBuffer.length === length && shareBuffer.length > 0;\n\nreturn {\n  json: {\n    share_id: shareId,\n    checksum: checksum,\n    valid: isValid,\n    processed_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "485d0a0b-dd22-48b5-969a-ea49b5f3a793",
+      "name": "MPC - Process Share 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2896,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Share 2 independently\n// Perform validation checks WITHOUT reconstructing original data\nconst crypto = require('crypto');\n\nconst shareData = $input.item.json.share_data;\nconst shareId = $input.item.json.share_id;\nconst length = $input.item.json.length;\n\n// Simulate processing: check share integrity\nconst shareBuffer = Buffer.from(shareData, 'base64');\nconst checksum = crypto.createHash('sha256').update(shareBuffer).digest('hex');\n\n// Validation logic on encrypted share only\nconst isValid = shareBuffer.length === length && shareBuffer.length > 0;\n\nreturn {\n  json: {\n    share_id: shareId,\n    checksum: checksum,\n    valid: isValid,\n    processed_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "815c28f5-279f-4dad-b1b3-8fecf8b11358",
+      "name": "MPC - Process Share 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2896,
+        1392
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a1026048-fe91-4ed1-a422-d0aab60032fd",
+      "name": "Merge MPC Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3120,
+        1296
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify results from both shares WITHOUT reconstructing original data\n// Output only VERIFIED or NOT_VERIFIED\n\nconst items = $input.all();\n\n// Check both shares were processed successfully\nconst share1 = items.find(item => item.json.share_id === 1);\nconst share2 = items.find(item => item.json.share_id === 2);\n\nconst allValid = share1?.json.valid && share2?.json.valid;\nconst bothProcessed = share1 && share2;\n\n// Determine verification status without reconstructing data\nconst verificationStatus = (bothProcessed && allValid) ? 'VERIFIED' : 'NOT_VERIFIED';\n\nreturn {\n  json: {\n    verification_status: verificationStatus,\n    shares_processed: bothProcessed ? 2 : (share1 || share2 ? 1 : 0),\n    verified_at: new Date().toISOString(),\n    note: 'Verification completed without reconstructing sensitive data'\n  }\n};"
+      },
+      "id": "9328f1ac-88b6-49eb-ac2c-0ecb0fde9aa7",
+      "name": "MPC - Verify Without Reconstruction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3344,
+        1296
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "source",
+              "value": "MPC",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "content",
+              "value": "={{ $json.verification_status }}",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "shares_processed",
+              "value": "={{ $json.shares_processed }}",
+              "type": "number"
+            },
+            {
+              "id": "id-4",
+              "name": "user_id",
+              "value": "={{ $('Extract Message Data').item.json.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "message_text",
+              "value": "[REDACTED - Sensitive Data]",
+              "type": "string"
+            },
+            {
+              "id": "id-6",
+              "name": "intent",
+              "value": "={{ $('Classify Intent (Gemini)').item.json.intent }}",
+              "type": "string"
+            },
+            {
+              "id": "id-7",
+              "name": "confidence",
+              "value": "={{ $('Classify Intent (Gemini)').item.json.confidence }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "12eb8445-f4d3-4de3-92d2-b1cb32c4f5ec",
+      "name": "Prepare MPC Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3568,
+        1296
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/customsearch/v1",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "AIzaSyCA0dQiR5-N4GQq2lr-pDCoTEu7rkKicrI"
+            },
+            {
+              "name": "cx",
+              "value": "636c62641fbf946cf"
+            },
+            {
+              "name": "q",
+              "value": "={{ $('Extract Message Data').item.json.message_text }}"
+            },
+            {
+              "name": "num",
+              "value": "3"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "d529d211-6581-4bac-8aeb-d3e81313b957",
+      "name": "Query Google Search API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3344,
+        1552
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "source",
+              "value": "SEARCH",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "content",
+              "value": "={{ $json.items ? $json.items.map(item => item.title + ': ' + item.snippet).join(' | ') : 'No results found' }}",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "search_query",
+              "value": "={{ $('Extract Message Data').item.json.message_text }}",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "results_count",
+              "value": "={{ $json.items ? $json.items.length : 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "id-5",
+              "name": "user_id",
+              "value": "={{ $('Extract Message Data').item.json.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "id-6",
+              "name": "intent",
+              "value": "={{ $('Classify Intent').item.json.intent }}",
+              "type": "string"
+            },
+            {
+              "id": "id-7",
+              "name": "confidence",
+              "value": "={{ $('Classify Intent').item.json.confidence }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2eb6d788-568b-442b-86b8-7ba6548e39d2",
+      "name": "Extract Search Snippets",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3568,
+        1552
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "source",
+              "value": "ESCALATION",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "content",
+              "value": "Request requires human agent assistance",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "escalation_reason",
+              "value": "={{ $('Classify Intent').item.json.confidence < $('Workflow Configuration').item.json.escalation_threshold ? 'low_confidence' : 'explicit_escalation' }}",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "user_id",
+              "value": "={{ $('Extract Message Data').item.json.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "message_text",
+              "value": "={{ $('Extract Message Data').item.json.message_text }}",
+              "type": "string"
+            },
+            {
+              "id": "id-6",
+              "name": "intent",
+              "value": "={{ $('Classify Intent').item.json.intent }}",
+              "type": "string"
+            },
+            {
+              "id": "id-7",
+              "name": "confidence",
+              "value": "={{ $('Classify Intent').item.json.confidence }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4a2ac20c-47a9-4aa4-8ffc-ae254a03b121",
+      "name": "Prepare Escalation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3568,
+        1744
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "source",
+              "value": "ESCALATION",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "content",
+              "value": "FAQ not found - escalating to human agent",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "escalation_reason",
+              "value": "no_faq_match",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "user_id",
+              "value": "={{ $('Extract Message Data').item.json.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "message_text",
+              "value": "={{ $('Extract Message Data').item.json.message_text }}",
+              "type": "string"
+            },
+            {
+              "id": "id-6",
+              "name": "intent",
+              "value": "={{ $('Classify Intent (Gemini)').item.json.intent }}",
+              "type": "string"
+            },
+            {
+              "id": "id-7",
+              "name": "confidence",
+              "value": "={{ $('Classify Intent (Gemini)').item.json.confidence }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "afa93c02-5e64-4b10-8ba0-dfa73b84c7dd",
+      "name": "Prepare No FAQ Escalation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3568,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "id": "ff4a34a6-d6f8-40bb-a1c1-b26e2ac8e42e",
+      "name": "Merge All Paths",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3792,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "type": "SHA256",
+        "value": "={{ $('Extract Message Data').item.json.user_id }}"
+      },
+      "id": "a237c75d-85f6-4051-a051-f662c145808e",
+      "name": "Hash User ID",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        4368,
+        1296
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "hashed_user_id",
+              "value": "={{ $json.data }}",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "intent",
+              "value": "={{ $('Merge All Paths').item.json.intent }}",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "path_taken",
+              "value": "={{ $('Merge All Paths').item.json.source }}",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "result_status",
+              "value": "={{ $('Merge All Paths').item.json.source === 'ESCALATION' ? 'escalated' : 'resolved' }}",
+              "type": "string"
+            },
+            {
+              "id": "id-6",
+              "name": "confidence",
+              "value": "={{ $('Merge All Paths').item.json.confidence }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1fc010e7-4d7b-4821-9365-d42a424f3a81",
+      "name": "Prepare Log Entry",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4592,
+        1296
+      ]
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "compliance_logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "intent": "={{ $json.path_taken }}",
+            "workflow_path": "={{ $json.path_taken }}",
+            "result_status": "={{ $json.result_status }}",
+            "id": "=123456",
+            "created_at": "={{ $json.timestamp }}",
+            "hashed_user_id": "={{ $json.hashed_user_id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hashed_user_id",
+              "displayName": "hashed_user_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "intent",
+              "displayName": "intent",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "workflow_path",
+              "displayName": "workflow_path",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "result_status",
+              "displayName": "result_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "75539e8c-328e-4341-93c1-a6115a735bb1",
+      "name": "Log to Compliance Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4816,
+        1296
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "Q6o18h5pep4xSeW8",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        1168,
+        1392
+      ],
+      "id": "db0788e0-a975-4de6-b912-fb42982cfbb8",
+      "name": "When chat message received",
+      "webhookId": "e769e471-3dba-4d2f-90a0-8c975ec4e575"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Classify the following user message into one of these intents: FAQ, SENSITIVE, SEARCH, or ESCALATE.\n\nUser message: {{ $json.message_text }}\n\nRespond with JSON in this exact format:\n{\n  \"intent\": \"FAQ|SENSITIVE|SEARCH|ESCALATE\",\n  \"confidence\": 0.95,\n  \"reasoning\": \"Brief explanation\"\n}\n\nIntent definitions:\n- FAQ: General questions that can be answered from a knowledge base\n- SENSITIVE: Messages containing personal data, passwords, or confidential information\n- SEARCH: Requests requiring web search or external information lookup\n- ESCALATE: Complex issues requiring human agent assistance"
+            }
+          ]
+        },
+        "simplify": false,
+        "builtInTools": {},
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "ced4c491-5f92-430c-b7d9-bd0b8bf0c347",
+      "name": "Classify Intent (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1840,
+        1392
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "dlkp4ltx9xR7c5gX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Generate a helpful response based on the following context:\n\nSource: {{ $json.source }}\nContent: {{ $json.content }}\nUser Query: {{ $json.message_text }}\n\nProvide a clear, professional response that addresses the user's question. If this is an escalation, inform the user that their request is being forwarded to a human agent."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "8bdf3d13-1adb-4dbf-b0cf-f55e8fc75965",
+      "name": "Generate Response (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        4032,
+        1296
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "dlkp4ltx9xR7c5gX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "instructions": "candidates[0].content.parts[0].text convert the output of last node into json format to process further ",
+        "codeGeneratedForPrompt": "candidates[0].content.parts[0].text convert the output of last node into json format to process further ",
+        "jsCode": "const items = $input.all();\nconst updatedItems = items.map((item) => {\n  const text = item?.json?.candidates[0]?.content?.parts[0]?.text;\n  const jsonText = text.slice(text.indexOf(\"{\"), text.lastIndexOf(\"}\") + 1);\n  try {\n    const jsonData = JSON.parse(jsonText);\n    return { json: jsonData };\n  } catch (error) {\n    // If JSON parsing fails, return the original item\n    return item;\n  }\n});\nreturn updatedItems;\n"
+      },
+      "type": "n8n-nodes-base.aiTransform",
+      "typeVersion": 1,
+      "position": [
+        2192,
+        1392
+      ],
+      "id": "b0b5268b-2dd2-4330-a57e-3a1d201d8e5b",
+      "name": "AI Transform"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Classify Intent (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Intent": {
+      "main": [
+        [
+          {
+            "node": "Query FAQ Database",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "MPC - Split Sensitive Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Query Google Search API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query FAQ Database": {
+      "main": [
+        [
+          {
+            "node": "FAQ Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FAQ Found?": {
+      "main": [
+        [
+          {
+            "node": "Prepare FAQ Answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare No FAQ Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare FAQ Answer": {
+      "main": [
+        [
+          {
+            "node": "Merge All Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare No FAQ Escalation": {
+      "main": [
+        [
+          {
+            "node": "Merge All Paths",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "MPC - Split Sensitive Data": {
+      "main": [
+        [
+          {
+            "node": "MPC - Process Share 1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "MPC - Process Share 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MPC - Process Share 1": {
+      "main": [
+        [
+          {
+            "node": "Merge MPC Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MPC - Process Share 2": {
+      "main": [
+        [
+          {
+            "node": "Merge MPC Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge MPC Results": {
+      "main": [
+        [
+          {
+            "node": "MPC - Verify Without Reconstruction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MPC - Verify Without Reconstruction": {
+      "main": [
+        [
+          {
+            "node": "Prepare MPC Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare MPC Result": {
+      "main": [
+        [
+          {
+            "node": "Merge All Paths",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Query Google Search API": {
+      "main": [
+        [
+          {
+            "node": "Extract Search Snippets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Search Snippets": {
+      "main": [
+        [
+          {
+            "node": "Merge All Paths",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Prepare Escalation": {
+      "main": [
+        [
+          {
+            "node": "Merge All Paths",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Merge All Paths": {
+      "main": [
+        [
+          {
+            "node": "Generate Response (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hash User ID": {
+      "main": [
+        [
+          {
+            "node": "Prepare Log Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Log Entry": {
+      "main": [
+        [
+          {
+            "node": "Log to Compliance Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Compliance Database": {
+      "main": [
+        []
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Intent (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "AI Transform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Response (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Hash User ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Transform": {
+      "main": [
+        [
+          {
+            "node": "Route by Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "85897789-87b9-402a-991f-c15950bfb0cb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f01b01c88633f59e358f051d18034ded1c07ec9a529741bafd2ea26b50a9bd16"
+  },
+  "id": "Rm4tzo9u41TvTEcuuO0F6",
+  "tags": []
+}

@@ -149,21 +149,20 @@ def calculate_risk(otp_success, identity_fails, voice_risk, intent, voice_prob=0
     return {
         "base_risk": f"{risk_percentage:.1f}%",
         "final_risk": final_risk,
-        "risk_percentage": risk_percentage,
-        "breakdown": details,
-        "history_modifier": history_modifier,
+        "risk_percentage": float(risk_percentage),
+        "breakdown": {k: float(v) for k, v in details.items()},
+        "history_modifier": int(history_modifier),
         "history_impact": history_impact,
         "signals": {
-            "otp_success": otp_success,
-            "identity_fails": identity_fails,
+            "otp_success": bool(otp_success),
+            "identity_fails": int(identity_fails),
             "voice_risk": voice_risk,
-            "voice_prob": voice_prob,
+            "voice_prob": float(voice_prob),
             "intent": intent,
-            "intent": intent,
-            "country_mismatch": country_mismatch,
-            "name_stability": name_stability,
-            "dob_stability": dob_stability,
+            "country_mismatch": bool(country_mismatch),
+            "name_stability": float(name_stability),
+            "dob_stability": float(dob_stability),
             "trust_trend": trust_trend,
-            "latency_score": latency_score
+            "latency_score": float(latency_score)
         }
     }

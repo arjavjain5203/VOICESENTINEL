@@ -561,11 +561,26 @@ def submit_response():
             print(f"[Cleanup Warning] {e}")
         
         # Sanitize risk_data for JSON
+        # Sanitize risk_data for JSON (Robust Check)
+        def robust_float(v):
+            if hasattr(v, 'item'): 
+                return v.item()
+            if isinstance(v, (np.float32, np.float64)):
+                return float(v)
+            return v
+            
         for k, v in risk_data.items():
-            if hasattr(v, 'item'):
-                 risk_data[k] = v.item()
-            elif isinstance(v, (np.float32, np.float64)):
-                 risk_data[k] = float(v)
+             risk_data[k] = robust_float(v)
+             
+        # Also handle nested checks if needed (but currently flat or specific dicts)
+        # Specifically signals dict:
+        if 'signals' in risk_data:
+            for sk, sv in risk_data['signals'].items():
+                risk_data['signals'][sk] = robust_float(sv)
+                
+        if 'breakdown' in risk_data:
+            for bk, bv in risk_data['breakdown'].items():
+                risk_data['breakdown'][bk] = robust_float(bv)
 
         return jsonify({
             "status": "completed",
